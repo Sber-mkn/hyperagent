@@ -17,7 +17,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
+  agent:
+    build: ./agent
+    container_name: hyperagent_agent
+    restart: no
+    volumes:
+      - ./agent:/hyperagent/agent:rw
+      - ./logs:/hyperagent/logs:rw
+      - ./constitution:/hyperagent/constitution:ro
   supervisor:
     build: ./supervisor
     container_name: hyperagent_supervisor
@@ -33,5 +40,6 @@ services:
       - PYTHONUNBUFFERED=1
     volumes:
       - .:/hyperagent
+      - /var/run/docker.sock:/var/run/docker.sock
 volumes:
   postgres_data:
