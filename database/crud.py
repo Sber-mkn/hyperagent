@@ -26,6 +26,12 @@ def get_snapshot_by_status(status):
             return first_snapshot.id, first_snapshot.sha, first_snapshot.modification
         return None, None, None
 
+def update_snapshot_status(snapshot_id, snapshot_status):
+    with Session() as session:
+        snapshot = session.get(Snapshot, snapshot_id)
+        if snapshot:
+            snapshot.status = snapshot_status
+            session.commit()
 
 def add_error(snapshot_id, error_text):
     with Session() as session:
