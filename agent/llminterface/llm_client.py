@@ -2,6 +2,7 @@ import requests
 import json
 from typing import List, Dict, Any, Optional, Iterator
 import time
+import re
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -26,7 +27,7 @@ def parse_keep_alive(value: str | int | float) -> float:
         "h": 3600,
     }
 
-    import re
+
     pattern = re.compile(r"(\d+(?:\.\d+)?)(ms|s|m|h)")
     matches = pattern.findall(value)
 
