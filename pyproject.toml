@@ -4,12 +4,13 @@ target-version = "py314"
 
 exclude = [
     ".git",
+    ".idea",
+    ".ruff_cache",
     ".venv",
     "__pycache__",
     "build",
     "dist",
-    "snapshots",
-    "data",
+    "logs",
 ]
 
 [tool.ruff.lint]

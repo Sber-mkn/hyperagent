@@ -1,7 +1,8 @@
-from database.session import Session
-from database.tables import Snapshot, AgentError
+from sqlalchemy import desc, exists, select
 
-from sqlalchemy import select, exists, desc
+from database.session import Session
+from database.tables import AgentError, Snapshot
+
 
 def add_snapshot(sha, status, modification: str):
     snapshot = Snapshot(sha=sha, status=status, modification=modification)
@@ -14,12 +15,11 @@ def add_snapshot(sha, status, modification: str):
         else:
             session.commit()
 
+
 def get_snapshot_by_status(status):
     with Session() as session:
         snapshot = (
-            select(Snapshot)
-            .where(Snapshot.status == status)
-            .order_by(desc(Snapshot.snapshot_time))
+            select(Snapshot).where(Snapshot.status == status).order_by(desc(Snapshot.snapshot_time))
         )
         first_snapshot = session.scalars(snapshot).first()
         if first_snapshot:
@@ -37,10 +37,11 @@ def add_error(snapshot_id, error_text):
                 error = AgentError(snapshot_id=snapshot_id, error_text=error_text)
                 session.add(error)
         except:
-                session.rollback()
-                raise
+            session.rollback()
+            raise
         else:
             session.commit()
+
 
 def get_errors(snapshot_id):
     with Session() as session:
@@ -49,8 +50,3 @@ def get_errors(snapshot_id):
             .where(AgentError.snapshot_id == snapshot_id)
             .order_by(desc(AgentError.error_time))
         )
-
-
-
-
-
