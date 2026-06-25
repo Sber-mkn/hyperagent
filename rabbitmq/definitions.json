@@ -1,0 +1,71 @@
+{
+  "users": [
+    {
+      "name": "agent",
+      "password": "12345",
+      "tags": ""
+    },
+    {
+      "name": "agent",
+      "password": "12345",
+      "tags": ""
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "agent",
+      "vhosts": "/",
+      "configure": "",
+      "write": "agent_exchange",
+      "read": "command_queue"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "agent_exchange",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false
+    }
+  ],
+  "queues": [
+    {
+      "name": "error_queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false
+    },
+    {
+      "name": "command_queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false
+    }
+  ],
+  "bindings": [
+    {
+      "source": "agent_exchange",
+      "vhost": "/",
+      "destination": "error_queue",
+      "destination_type": "queue",
+      "routing_key": "error",
+      "arguments": {}
+    },
+    {
+      "source": "agent_exchange",
+      "vhost": "/",
+      "destination": "command_queue",
+      "destination_type": "queue",
+      "routing_key": "command",
+      "arguments": {}
+    }
+  ]
+}
+
+

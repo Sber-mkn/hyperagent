@@ -41,5 +41,16 @@ services:
     volumes:
       - .:/hyperagent
       - /var/run/docker.sock:/var/run/docker.sock
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: hyperagent_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
 volumes:
   postgres_data:
+  rabbitmq_data:

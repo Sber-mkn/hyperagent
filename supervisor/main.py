@@ -16,6 +16,7 @@ def rollback_agent():
     subprocess.run(["git", "checkout", "-f", snapshot_sha], cwd=AGENT_REPO, check=True)
 
 
+
 def supervise_agent(container):
     if not os.path.exists(AGENT_ERROR_LOG) or os.path.getsize(AGENT_ERROR_LOG) == 0:
         return
