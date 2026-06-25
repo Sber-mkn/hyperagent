@@ -3,10 +3,12 @@ import traceback
 
 AGENT_ERROR_LOG = "/logs/agent_error.log"
 
+
 def main():
     pass
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     try:
         main()
     except Exception as e:
