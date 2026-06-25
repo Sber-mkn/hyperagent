@@ -255,6 +255,114 @@ def change_file(path: str, old: str, new: str, encoding: str = "utf-8") -> str:
     return f"Файл изменён: {p}"
 
 
-SAFE_TOOLS = [web_search, fetch_url, fetch_url_render, list_files, read_file]
+# ── generate_code ─────────────────────────────────────────────────────────────
+
+_CODER_FORMAT = {
+    "type": "object",
+    "properties": {
+        "realizable": {
+            "type": "boolean",
+            "description": "true если задача реализуема, false если нет"
+        },
+        "code": {
+            "type": "string",
+            "description": "Готовый код (заполни если realizable=true, иначе пустая строка)"
+        },
+        "reason": {
+            "type": "string",
+            "description": "Объяснение почему задача нереализуема (заполни если realizable=false, иначе пустая строка)"
+        },
+    },
+    "required": ["realizable", "code", "reason"]
+}
+
+_CODER_SYSTEM = (
+    "Ты — эксперт по написанию кода. "
+    "Тебе передают структурированное техническое задание. Напиши чистый, рабочий код строго по требованиям. "
+    "Код должен быть самодостаточным: определяй функции/классы, затем вызывай их и выводи результат через print(), "
+    "чтобы при запуске через exec() был виден вывод. "
+    "Если задача нереализуема (противоречива, требует недоступных ресурсов или выходит за рамки возможного) — "
+    "объясни причину в поле reason и верни realizable=false. "
+    "Отвечай строго в формате JSON."
+)
+
+
+def _build_coder_prompt(
+    description: str,
+    language: str,
+    signature: str,
+    requirements: str,
+    examples: str,
+) -> str:
+    sections = [f"## Задача\n{description}"]
+    if language:
+        sections.append(f"## Язык\n{language}")
+    if signature:
+        sections.append(f"## Сигнатура / интерфейс\n```\n{signature}\n```")
+    if requirements:
+        sections.append(f"## Требования\n{requirements}")
+    if examples:
+        sections.append(f"## Примеры входа/выхода\n{examples}")
+    return "\n\n".join(sections)
+
+
+_coder_client = None
+
+def _get_coder_client():
+    global _coder_client
+    if _coder_client is None:
+        from agent.llminterface.clients.ollama_client import OllamaClient
+        url = "http://100.93.59.55:11434/api/chat"
+        _coder_client = OllamaClient(url, "deepseek-coder-v2:16b-4k", temperature=0.2)
+    return _coder_client
+
+
+@agent_tool
+def generate_code(
+    description: str,
+    language: str = "",
+    signature: str = "",
+    requirements: str = "",
+    examples: str = "",
+) -> str:
+    """Генерирует код с помощью специальной модели deepseek-coder.
+    Возвращает готовый код или объяснение почему задача нереализуема.
+    Код возвращается самодостаточным — содержит вызов точки входа и вывод результата через print.
+
+    Args:
+        description: Что нужно реализовать — основное описание задачи
+        language: Язык программирования (например: Python, C++, TypeScript, Go)
+        signature: Сигнатура функции, класса или интерфейс который нужно реализовать
+        requirements: Список требований, ограничений и нефункциональных требований
+        examples: Примеры входных данных и ожидаемых результатов
+    """
+    import json
+
+    prompt = _build_coder_prompt(description, language, signature, requirements, examples)
+    messages = [
+        {"role": "system", "content": _CODER_SYSTEM},
+        {"role": "user", "content": prompt},
+    ]
+
+    try:
+        resp = _get_coder_client().chat(messages, format=_CODER_FORMAT)
+    except Exception as e:
+        return f"Ошибка при обращении к deepseek-coder: {e}"
+
+    try:
+        result = json.loads(resp.content)
+    except json.JSONDecodeError as e:
+        return f"Ошибка парсинга ответа модели: {e}\nСырой ответ: {resp.content[:500]}"
+
+    if not result.get("realizable", True):
+        return f"[нереализуемо] {result.get('reason', 'причина не указана')}"
+
+    code = result.get("code", "").strip()
+    if not code:
+        return "Ошибка: модель вернула пустой код"
+    return code
+
+
+SAFE_TOOLS = [web_search, fetch_url, fetch_url_render, list_files, read_file, generate_code]
 HUMAN_IN_LOOP_TOOLS = [run_bash, run_python, write_file, change_file]
 ALL_TOOLS = SAFE_TOOLS + HUMAN_IN_LOOP_TOOLS
