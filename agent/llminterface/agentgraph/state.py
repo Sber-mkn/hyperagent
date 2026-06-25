@@ -17,6 +17,9 @@ class AgentState(TypedDict, total=False):
     output: Annotated[str, replace]
     thinking: Annotated[str, replace]
     step: Annotated[int, operator.add]
+    approved: Annotated[bool, replace]
+    reflections: Annotated[int, operator.add]
+    reflection: Annotated[str, replace]
 
 
 def merge_state(state: dict, update: dict, schema: type) -> dict:
