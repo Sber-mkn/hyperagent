@@ -27,7 +27,9 @@ services:
       - ./constitution:/hyperagent/constitution:ro
       - ./git_service:/hyperagent/git_service:ro
   supervisor:
-    build: ./supervisor
+    build:
+      context: .
+      dockerfile: supervisor/Dockerfile
     container_name: hyperagent_supervisor
     depends_on:
       db:
