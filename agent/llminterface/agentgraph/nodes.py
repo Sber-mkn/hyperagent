@@ -73,7 +73,9 @@ class LLMNode:
         if tool_calls:
             ai_msg["tool_calls"] = tool_calls
         update: dict = {self.messages_key: [ai_msg], "step": 1}
-        if self.output_key:
+        # output обновляем только содержательным ответом: пустой content
+        # (например, ход модели, состоящий лишь из thinking) не должен затирать итог
+        if self.output_key and content and content.strip():
             update[self.output_key] = content
         if thinking:
             update["thinking"] = thinking

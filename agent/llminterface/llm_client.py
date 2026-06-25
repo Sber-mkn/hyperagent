@@ -17,7 +17,7 @@ class LLMClient(ABC):
             self,
             messages: List[Dict[str, Any]],
             tools: Optional[List[Dict[str, Any]]] = None,
-            timeout: int = 120,
+            timeout: int = 300,
             **kwargs: int | float | str | bool
     ) -> LLMResponse:
         ...
@@ -27,7 +27,7 @@ class LLMClient(ABC):
             self,
             messages: List[Dict[str, Any]],
             tools: Optional[List[Dict[str, Any]]] = None,
-            timeout: int = 120,
+            timeout: int = 300,
             **kwargs: int | float | str | bool
     ) -> LLMStreamingResponse:
         ...
