@@ -42,7 +42,7 @@
       "auto_delete": false
     },
     {
-      "name": "command_queue",
+      "name": "agent_queue",
       "vhost": "/",
       "durable": true,
       "auto_delete": false
@@ -60,9 +60,9 @@
     {
       "source": "agent_exchange",
       "vhost": "/",
-      "destination": "command_queue",
+      "destination": "agent_queue",
       "destination_type": "queue",
-      "routing_key": "command",
+      "routing_key": "agent",
       "arguments": {}
     }
   ]

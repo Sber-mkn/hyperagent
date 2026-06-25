@@ -24,7 +24,7 @@ def get_snapshot_by_status(status):
         first_snapshot = session.scalars(snapshot).first()
         if first_snapshot:
             return first_snapshot.id, first_snapshot.sha, first_snapshot.modification
-        return None, None, None
+        return None
 
 
 def update_snapshot_status(snapshot_id, snapshot_status):
@@ -58,3 +58,4 @@ def get_errors(snapshot_id):
             .where(AgentError.snapshot_id == snapshot_id)
             .order_by(desc(AgentError.error_time))
         )
+        return session.scalars(errors)

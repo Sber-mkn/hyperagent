@@ -25,6 +25,7 @@ services:
       - ./agent:/hyperagent/agent:rw
       - ./logs:/hyperagent/logs:rw
       - ./constitution:/hyperagent/constitution:ro
+      - ./git_service:/hyperagent/git_service:ro
   supervisor:
     build: ./supervisor
     container_name: hyperagent_supervisor
