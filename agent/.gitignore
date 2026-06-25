@@ -1,0 +1,5 @@
+.env
+workdir/
+generated_tools/
+__pycache__/
+*.pyc
