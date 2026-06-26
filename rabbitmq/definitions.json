@@ -6,7 +6,7 @@
       "tags": ""
     },
     {
-      "name": "agent",
+      "name": "supervisor",
       "password": "12345",
       "tags": ""
     }
@@ -19,10 +19,10 @@
   "permissions": [
     {
       "user": "agent",
-      "vhosts": "/",
+      "vhost": "/",
       "configure": "",
       "write": "agent_exchange",
-      "read": "command_queue"
+      "read": "agent_queue"
     }
   ],
   "exchanges": [
@@ -36,7 +36,7 @@
   ],
   "queues": [
     {
-      "name": "error_queue",
+      "name": "supervisor_queue",
       "vhost": "/",
       "durable": true,
       "auto_delete": false
@@ -52,17 +52,17 @@
     {
       "source": "agent_exchange",
       "vhost": "/",
-      "destination": "error_queue",
+      "destination": "agent_queue",
       "destination_type": "queue",
-      "routing_key": "error",
+      "routing_key": "agent",
       "arguments": {}
     },
     {
       "source": "agent_exchange",
       "vhost": "/",
-      "destination": "agent_queue",
+      "destination": "supervisor_queue",
       "destination_type": "queue",
-      "routing_key": "agent",
+      "routing_key": "supervisor",
       "arguments": {}
     }
   ]

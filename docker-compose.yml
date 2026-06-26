@@ -18,14 +18,19 @@ services:
       timeout: 5s
       retries: 5
   agent:
-    build: ./agent
+    build:
+      context: .
+      dockerfile: agent_immutable/Dockerfile
     container_name: hyperagent_agent
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     restart: no
     volumes:
       - ./agent:/hyperagent/agent:rw
       - ./logs:/hyperagent/logs:rw
       - ./constitution:/hyperagent/constitution:ro
-      - ./git_service:/hyperagent/git_service:ro
+      - ./agent_immutable:/hyperagent/agent_immutable:ro
   supervisor:
     build:
       context: .
@@ -33,6 +38,8 @@ services:
     container_name: hyperagent_supervisor
     depends_on:
       db:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     environment:
       - POSTGRES_HOST=db
@@ -42,7 +49,9 @@ services:
       - POSTGRES_PASSWORD=12345
       - PYTHONUNBUFFERED=1
     volumes:
-      - .:/hyperagent
+      - ./supervisor:/hyperagent/supervisor
+      - ./database:/hyperagent/database
+      - ./requirements:/hyperagent/requirements
       - /var/run/docker.sock:/var/run/docker.sock
   rabbitmq:
     image: rabbitmq:3-management
@@ -54,6 +63,11 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq
       - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
       - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 10s
+      retries: 5
 volumes:
   postgres_data:
   rabbitmq_data:
