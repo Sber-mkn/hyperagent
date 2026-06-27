@@ -9,6 +9,11 @@
       "name": "supervisor",
       "password": "12345",
       "tags": ""
+    },
+    {
+      "name": "admin",
+      "password": "admin",
+      "tags": "administrator"
     }
   ],
   "vhosts": [
@@ -23,6 +28,13 @@
       "configure": "",
       "write": "agent_exchange",
       "read": "agent_queue"
+    },
+    {
+      "user": "supervisor",
+      "vhost": "/",
+      "configure": "",
+      "write": "agent_exchange",
+      "read": "supervisor_queue"
     }
   ],
   "exchanges": [

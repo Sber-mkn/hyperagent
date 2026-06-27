@@ -1,6 +1,6 @@
 import json
 import pika
-from message_errors import *
+from agent_immutable.rabbitmq.message_errors import *
 from pika import exceptions
 
 RABBITMQ_URL = "amqp://agent:12345@rabbitmq:5672/"
@@ -48,7 +48,7 @@ class RabbitMQServise:
             )
         except pika.exceptions.AMQPConnectionError as e:
             raise ConnectionLostError(
-                f"Lost connection {commit_sha}: {e}"
+                f"{commit_sha}: {e}"
             ) from e
         except pika.exceptions.UnroutableError as e:
             raise MessagePublishError(
@@ -64,7 +64,7 @@ class RabbitMQServise:
     def send_error(self, error_text):
         message = {
             "type": "error",
-            "message": error_text
+            "error": error_text
         }
         body = json.dumps(message)
         try:
@@ -79,7 +79,7 @@ class RabbitMQServise:
             )
         except pika.exceptions.AMQPConnectionError as e:
             raise ConnectionLostError(
-                f"Lost connection {error_text}: {e}"
+                f"{error_text}: {e}"
             ) from e
         except pika.exceptions.UnroutableError as e:
             raise MessagePublishError(
@@ -91,6 +91,28 @@ class RabbitMQServise:
         except pika.exceptions.AMQPChannelError as e:
             raise ChannelError(
                 f"{error_text}: {e}"
+            ) from e
+    def send_ack(self):
+        message = {
+            "type": "ack"
+        }
+        body = json.dumps(message)
+        try:
+            self.channel.basic_publish(
+                exchange=self.exchange,
+                routing_key=self.routing_key,
+                body=body,
+                properties=pika.BasicProperties(
+                    delivery_mode=2,
+                    content_type="application/json"
+                )
+            )
+        except pika.exceptions.AMQPError as e:
+            raise MessagePublishError(
+                message=f"ACK was not delivered: {e}",
+                exchange=self.exchange,
+                routing_key=self.routing_key,
+                body=body
             ) from e
 
     def get_command(self):

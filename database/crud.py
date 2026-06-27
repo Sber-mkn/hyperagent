@@ -29,10 +29,14 @@ def get_snapshot_by_status(status):
 
 def update_snapshot_status(snapshot_id, snapshot_status):
     with Session() as session:
-        snapshot = session.get(Snapshot, snapshot_id)
-        if snapshot:
-            snapshot.status = snapshot_status
-            session.commit()
+        try:
+            snapshot = session.get(Snapshot, snapshot_id)
+            if snapshot:
+                snapshot.status = snapshot_status
+                session.commit()
+        except Exception:
+            session.rollback()
+            raise
 
 
 def add_error(snapshot_id, error_text):

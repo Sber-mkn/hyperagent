@@ -6,7 +6,7 @@ create table snapshots
     snapshot_time timestamp default current_timestamp,
     modification  text        not null
         constraint check_status
-            check (status in ('PENDING', 'STABLE', 'ERROR', 'ROLLBACK'))
+            check (status in ('PENDING', 'STABLE', 'ERROR'))
 );
 
 create table errors

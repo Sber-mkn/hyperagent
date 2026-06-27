@@ -20,7 +20,7 @@ class Snapshot(Base):
     modification: Mapped[str] = mapped_column(Text)
     __table_args__ = (
         CheckConstraint(
-            "status = 'PENDING' or status = 'STABLE' or status = 'ERROR'", name="check_status"
+            "status in ('PENDING', 'STABLE', 'ERROR')", name="check_status"
         ),
     )
 
