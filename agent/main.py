@@ -88,6 +88,7 @@ def log_tool_event(event: "ToolEvent") -> None:
 def final_answer(state: dict) -> str:
     """Возвращает последний содержательный ответ оркестратора.
     Пропускает пустые ходы и JSON-вердикт рефлектора (содержит ключ approved)."""
+    from agent.llminterface.agentgraph.nodes import loads_loose
     for msg in reversed(state.get("messages", [])):
         if msg.get("role") != "assistant":
             continue
@@ -95,7 +96,7 @@ def final_answer(state: dict) -> str:
         if not content:
             continue
         try:
-            parsed = json.loads(content)
+            parsed = loads_loose(content)
             if isinstance(parsed, dict) and "approved" in parsed:
                 continue
         except (json.JSONDecodeError, TypeError):
@@ -173,7 +174,8 @@ REFLECTOR_SYSTEM = (
     "- Подтверждён ли результат фактами из диалога (запущенный код, проверенный файл, реальный вывод "
     "инструментов), а не обещаниями агента.\n"
     "- Нет ли невыполненных шагов, ошибок инструментов без исправления или выдуманных данных.\n\n"
-    "Инструменты тебе видны только для понимания контекста — ВЫЗЫВАТЬ их нельзя, анализируй уже произошедшее.\n\n"
+    "Весь ход работы (вызовы инструментов и их результаты) уже виден тебе в истории сообщений — "
+    "анализируй уже произошедшее, ничего вызывать не нужно.\n\n"
     "Ответь строго в формате JSON: approved=true если задача полностью и корректно решена; "
     "approved=false если что-то не доделано или сделано неверно; "
     "comment — кратко, что подтверждает успех либо какие конкретные шаги агенту нужно выполнить для исправления."
@@ -183,24 +185,29 @@ REFLECTOR_SYSTEM = (
 def make_clients(url: str = OLLAMA_URL) -> tuple[LLMClient, LLMClient]:
     """Создаёт клиентов оркестратора (с рассуждением) и рефлектора (строгий JSON)."""
     orchestrator: LLMClient = OllamaClient(
-        url, "qwen3.6:35b",
+        url, "nemotron-cascade-2:latest",
         temperature=0.4, keep_alive="10m", num_ctx=32768, think=True
     )
     reflector: LLMClient = OllamaClient(
-        url, "qwen3.6:35b",
+        url, "nemotron-cascade-2:latest",
         temperature=0.3, keep_alive="10m", num_ctx=32768, think=False
     )
     return orchestrator, reflector
 
 
 def build_graph(orchestrator: LLMClient, reflector: LLMClient,
-                tools: list = None, on_tool_event=log_tool_event) -> AgentGraph:
+                tools: list = None, on_tool_event=log_tool_event,
+                request_timeout: int = 600) -> AgentGraph:
     """Собирает граф agent → tools → reflector. Граф не хранит состояния прогона,
-    поэтому одну сборку можно переиспользовать для разных задач."""
+    поэтому одну сборку можно переиспользовать для разных задач.
+    request_timeout — HTTP-таймаут одного запроса к модели (сек). Для 35B с think=True
+    одна генерация легко превышает дефолтные 120 с, поэтому ставим с запасом."""
     tools = TOOLS if tools is None else tools
 
     graph = AgentGraph(AgentState)
-    graph.add_node("agent", LLMNode(orchestrator, system=ORCHESTRATOR_SYSTEM, tools=tools))
+    graph.add_node("agent", LLMNode(
+        orchestrator, system=ORCHESTRATOR_SYSTEM, tools=tools, timeout=request_timeout,
+    ))
     graph.add_node("reflector", LLMNode(
         reflector,
         system=REFLECTOR_SYSTEM,
@@ -208,7 +215,10 @@ def build_graph(orchestrator: LLMClient, reflector: LLMClient,
         response_format=REFLECTOR_FORMAT,
         json_state_map={"approved": "approved", "comment": "reflection"},
         extra_state={"reflections": 1},
-        tools=tools,
+        # ВАЖНО: рефлектору НЕ передаём tools. С tools модель Ollama перестаёт соблюдать
+        # response_format (JSON-схему) и отвечает прозой → approved не парсится. Весь контекст
+        # (вызовы инструментов и их результаты) уже доступен рефлектору через историю сообщений.
+        timeout=request_timeout,
     ))
     graph.add_node("tools", ToolNode(tools, on_tool_event=on_tool_event))
     graph.add_edge(START, "agent")
@@ -223,8 +233,10 @@ if __name__ == "__main__":
     orchestrator, reflector = make_clients()
     graph = build_graph(orchestrator, reflector)
 
-    task = ("Создай таблицу в excel с реальной температурой за каждый день текущего года. "
-            "Над таблицей должен быть расположен график. Итоговый файл должен располагаться в C://example")
+    task = ("Создай excel файл в котором будет содержаться реальная температура за каждый день в текущем году в моём текущем городе. "
+            "Также создай pdf картинку с соответствующим графиком. Также сделай отдельную excel таблицу в которой будет содержаться "
+            "информация о моделях qwen3.6-35b, gemma:26b, nemotron-cascade-2 и gemma4-12b. В таблице должны содержаться их описание, "
+            "архитектура, размер, количество параметров и любая другая полезная информация о них, которую ты сможешь найти в интернете.")
 
     print(f"{C.BOLD}ЗАДАЧА:{C.RESET} {task}")
 

@@ -20,6 +20,11 @@ class AgentState(TypedDict, total=False):
     approved: Annotated[bool, replace]
     reflections: Annotated[int, operator.add]
     reflection: Annotated[str, replace]
+    # учёт токенов (накапливается по всем вызовам моделей графа)
+    prompt_tokens: Annotated[int, operator.add]
+    completion_tokens: Annotated[int, operator.add]
+    total_tokens: Annotated[int, operator.add]
+    llm_calls: Annotated[int, operator.add]
 
 
 def merge_state(state: dict, update: dict, schema: type) -> dict:

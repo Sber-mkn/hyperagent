@@ -165,33 +165,43 @@ def run_bash(command: str, timeout: int = 30) -> str:
 
 
 @agent_tool
-def run_python(code: str) -> str:
-    """Выполняет Python-код через exec() и возвращает stdout или текст ошибки. Используй для запуска кода из
-    generate_code и проверки результата. Результат виден только если код печатает его через print().
-    Состояние между вызовами не сохраняется; если нужной библиотеки нет — установи её через run_bash (pip install).
+def run_python(code: str, timeout: int = 120) -> str:
+    """Выполняет Python-код в изолированном подпроцессе (тем же интерпретатором, sys.executable)
+    и возвращает stdout+stderr или текст ошибки. Используй для запуска кода из generate_code и проверки
+    результата. Результат виден, только если код печатает его через print().
+    Изоляция в подпроцессе означает: блокирующий код прерывается по таймауту, а пакеты, только что
+    установленные через run_bash (pip install), сразу видны. Состояние между вызовами не сохраняется.
 
     Args:
         code: Python-код для выполнения
+        timeout: Таймаут в секундах (по умолчанию 120)
     """
-
-    preview = textwrap.indent(textwrap.shorten(code, width=200, placeholder="..."), "  ")
-
-    import io
     import sys
+    import tempfile
 
-    stdout_capture = io.StringIO()
-    old_stdout = sys.stdout
-    sys.stdout = stdout_capture
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as f:
+        f.write(code)
+        path = f.name
 
     try:
-        local_ns: dict = {}
-        exec(compile(code, "<agent>", "exec"), local_ns)  # noqa: S102
-        output = stdout_capture.getvalue()
-        return _truncate(output) if output.strip() else "(код выполнен, вывод пустой)"
-    except Exception as e:
-        return f"Ошибка: {type(e).__name__}: {e}"
+        result = subprocess.run(
+            [sys.executable, path],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=timeout,
+        )
+        output = result.stdout or ""
+        if result.stderr:
+            output += f"\n[stderr]\n{result.stderr}"
+        if not output.strip():
+            output = f"(код выполнен, код возврата {result.returncode}, вывод пустой)"
+        return _truncate(output)
+    except subprocess.TimeoutExpired:
+        return f"Ошибка: таймаут {timeout}с превышен"
     finally:
-        sys.stdout = old_stdout
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
 
 @agent_tool
@@ -319,12 +329,22 @@ def _build_coder_prompt(
 
 _coder_client = None
 
+# Учёт токенов модели-кодера. Граф его не видит (вызов внутри инструмента),
+# поэтому копим здесь; test.py сбрасывает перед задачей и читает после.
+CODER_USAGE = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "calls": 0}
+
+
+def reset_coder_usage() -> None:
+    for k in CODER_USAGE:
+        CODER_USAGE[k] = 0
+
+
 def _get_coder_client():
     global _coder_client
     if _coder_client is None:
         from agent.llminterface.clients.ollama_client import OllamaClient
         url = "http://localhost:11434/api/chat"
-        _coder_client = OllamaClient(url, "qwen3-coder-next", temperature=0.2, num_ctx = 32768)
+        _coder_client = OllamaClient(url, "nemotron-cascade-2:latest", temperature=0.2, num_ctx = 32768)
     return _coder_client
 
 
@@ -360,7 +380,13 @@ def generate_code(
     try:
         resp = _get_coder_client().chat(messages, format=_CODER_FORMAT, timeout=600)
     except Exception as e:
-        return f"Ошибка при обращении к deepseek-coder: {e}"
+        return f"Ошибка при обращении к модели-кодеру: {e}"
+
+    if resp.usage is not None:
+        CODER_USAGE["prompt_tokens"] += getattr(resp.usage, "prompt_tokens", 0) or 0
+        CODER_USAGE["completion_tokens"] += getattr(resp.usage, "completion_tokens", 0) or 0
+        CODER_USAGE["total_tokens"] += getattr(resp.usage, "total_tokens", 0) or 0
+        CODER_USAGE["calls"] += 1
 
     try:
         result = json.loads(resp.content)

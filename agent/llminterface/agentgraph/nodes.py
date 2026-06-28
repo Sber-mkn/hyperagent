@@ -1,8 +1,32 @@
 import json
+import re
 from typing import Callable, Optional, Any, Union
 
 from agent.llminterface.llm_client import LLMClient
 from agent.llminterface.agentgraph.node import NodeStream
+
+
+def loads_loose(content: str) -> Any:
+    """json.loads, устойчивый к обёртке в markdown-фенсы (```json ... ```).
+    Модели иногда оборачивают структурированный ответ в ``` несмотря на response_format —
+    из-за чего обычный json.loads падает. Сначала пробуем как есть, затем снимаем фенсы,
+    затем вырезаем первый сбалансированный объект {...}."""
+    if not isinstance(content, str):
+        raise TypeError("content должен быть str")
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+    s = content.strip()
+    m = re.match(r"^```[a-zA-Z0-9]*\s*\n(.*?)\n?```$", s, re.DOTALL)
+    if m:
+        s = m.group(1).strip()
+        return json.loads(s)
+    start = s.find("{")
+    end = s.rfind("}")
+    if start != -1 and end > start:
+        return json.loads(s[start:end + 1])
+    raise json.JSONDecodeError("не удалось извлечь JSON", content, 0)
 
 
 def _normalize_tool_schemas(tools: Optional[list]) -> Optional[list[dict]]:
@@ -66,13 +90,17 @@ class LLMNode:
         return messages
 
     def _build_update(self, content: str, tool_calls: Optional[list],
-                      thinking: Optional[str] = None) -> dict:
+                      thinking: Optional[str] = None, usage: Optional[Any] = None) -> dict:
         ai_msg: dict = {"role": "assistant", "content": content}
         if thinking:
             ai_msg["thinking"] = thinking
         if tool_calls:
             ai_msg["tool_calls"] = tool_calls
-        update: dict = {self.messages_key: [ai_msg], "step": 1}
+        update: dict = {self.messages_key: [ai_msg], "step": 1, "llm_calls": 1}
+        if usage is not None:
+            update["prompt_tokens"] = getattr(usage, "prompt_tokens", 0) or 0
+            update["completion_tokens"] = getattr(usage, "completion_tokens", 0) or 0
+            update["total_tokens"] = getattr(usage, "total_tokens", 0) or 0
         # output обновляем только содержательным ответом: пустой content
         # (например, ход модели, состоящий лишь из thinking) не должен затирать итог
         if self.output_key and content and content.strip():
@@ -82,10 +110,11 @@ class LLMNode:
 
         if self.json_state_map:
             try:
-                parsed = json.loads(content)
-                for json_key, state_key in self.json_state_map.items():
-                    if json_key in parsed:
-                        update[state_key] = parsed[json_key]
+                parsed = loads_loose(content)
+                if isinstance(parsed, dict):
+                    for json_key, state_key in self.json_state_map.items():
+                        if json_key in parsed:
+                            update[state_key] = parsed[json_key]
             except (json.JSONDecodeError, TypeError):
                 pass
 
@@ -95,7 +124,7 @@ class LLMNode:
     def __call__(self, state: dict) -> dict:
         messages = self._prepare_messages(state)
         resp = self.client.chat(messages, tools=self.tools, **self.chat_kwargs)
-        return self._build_update(resp.content, resp.tool_calls, resp.thinking)
+        return self._build_update(resp.content, resp.tool_calls, resp.thinking, resp.usage)
 
     def stream(self, state: dict) -> NodeStream:
         """Возвращает NodeStream. Итерируется по токенам, в update доступен готовый dict-update"""
@@ -106,7 +135,7 @@ class LLMNode:
             for chunk in resp_stream:          # chunk: StreamChunk(type, text)
                 yield chunk
             final = resp_stream.response
-            holder.update = self._build_update(final.content, final.tool_calls, final.thinking)
+            holder.update = self._build_update(final.content, final.tool_calls, final.thinking, final.usage)
         holder = NodeStream(gen())
         return holder
 

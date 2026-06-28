@@ -14,6 +14,7 @@
 После всех прогонов печатается и сохраняется сводка test_runs/summary.md.
 
 """
+import os
 import sys
 import time
 import traceback
@@ -27,7 +28,11 @@ from agent import main as M
 from agent.tools import computer_tools
 
 # ── Настройки прогона ────────────────────────────────────────────────────────
-RUNS = 5
+# Число прогонов и стартовый номер настраиваются через окружение, чтобы можно было
+# доезапустить тест с продолжением нумерации, не трогая код:
+#   AGENT_TEST_START=4 AGENT_TEST_RUNS=2  → run_4, run_5 (rep_test_4, rep_test_5)
+RUNS = int(os.environ.get("AGENT_TEST_RUNS", "3"))
+START_RUN = int(os.environ.get("AGENT_TEST_START", "1"))
 BASE_DIR = Path(__file__).resolve().parent / "test_runs"
 RECURSION_LIMIT = 80  # задачи длинные (github, ML) — поднимаем лимит шагов графа
 
@@ -130,6 +135,15 @@ class Recorder:
     def finish(self, summary: dict) -> None:
         self._w("\n\n## ИТОГ\n")
         self._w(f"\n**Время выполнения:** {summary.get('seconds', 0)} с\n")
+        tok = summary.get("tokens", {})
+        if tok:
+            self._w(
+                f"**Токены:** всего {tok.get('total', 0)} "
+                f"(оркестратор+рефлектор: {tok.get('graph_total', 0)} за {tok.get('graph_calls', 0)} вызовов "
+                f"[prompt {tok.get('graph_prompt', 0)} / completion {tok.get('graph_completion', 0)}]; "
+                f"кодер: {tok.get('coder_total', 0)} за {tok.get('coder_calls', 0)} вызовов "
+                f"[prompt {tok.get('coder_prompt', 0)} / completion {tok.get('coder_completion', 0)}])\n"
+            )
         verdict = "одобрено" if summary.get("approved") else "требует доработки"
         self._w(f"**Вердикт рефлектора:** {verdict}\n\n")
         self._w((summary.get("answer") or "(пустой ответ)") + "\n")
@@ -146,9 +160,11 @@ class Recorder:
 def run_task(orchestrator, reflector, tools, prompt: str, task_dir: Path) -> dict:
     task_dir.mkdir(parents=True, exist_ok=True)
     rec = Recorder(task_dir / "history.md", prompt)
-    summary = {"approved": None, "answer": "", "reflection": "", "error": None, "seconds": 0.0}
+    summary = {"approved": None, "answer": "", "reflection": "", "error": None,
+               "seconds": 0.0, "tokens": {}}
 
     graph = M.build_graph(orchestrator, reflector, tools=tools, on_tool_event=rec.tool_event)
+    computer_tools.reset_coder_usage()  # токены кодера считаем per-task
     started = time.time()
     try:
         result = graph.stream(
@@ -163,6 +179,18 @@ def run_task(orchestrator, reflector, tools, prompt: str, task_dir: Path) -> dic
         summary["approved"] = bool(state.get("approved"))
         summary["answer"] = M.final_answer(state)
         summary["reflection"] = state.get("reflection", "")
+        cu = computer_tools.CODER_USAGE
+        summary["tokens"] = {
+            "graph_prompt": state.get("prompt_tokens", 0),
+            "graph_completion": state.get("completion_tokens", 0),
+            "graph_total": state.get("total_tokens", 0),
+            "graph_calls": state.get("llm_calls", 0),
+            "coder_prompt": cu["prompt_tokens"],
+            "coder_completion": cu["completion_tokens"],
+            "coder_total": cu["total_tokens"],
+            "coder_calls": cu["calls"],
+            "total": state.get("total_tokens", 0) + cu["total_tokens"],
+        }
     except Exception as e:
         summary["error"] = f"{type(e).__name__}: {e}"
         print(f"\n{C.RED}{C.BOLD}  ОШИБКА: {summary['error']}{C.RESET}", flush=True)
@@ -184,9 +212,10 @@ def write_summary(results: list[tuple[int, str, dict]]) -> None:
         "# Сводка тестового прогона",
         f"\n**Дата:** {datetime.now():%Y-%m-%d %H:%M:%S}",
         f"\n**Итого задач:** {total} | ✅ одобрено: {ok} | ⚠️ не одобрено: {total - ok - errored} | 💥 ошибки: {errored}",
-        "\n| Прогон | Задача | Результат | Время, с | Комментарий рефлектора |",
-        "|---|---|---|---|---|",
+        "\n| Прогон | Задача | Результат | Время, с | Токены (всего) | Комментарий рефлектора |",
+        "|---|---|---|---|---|---|",
     ]
+    grand_tokens = 0
     for run_idx, name, s in results:
         if s["error"]:
             status = "💥 ошибка"
@@ -198,10 +227,19 @@ def write_summary(results: list[tuple[int, str, dict]]) -> None:
             status = "⚠️ не одобрено"
             note = s["reflection"] or ""
         note = note.replace("\n", " ").replace("|", "\\|")[:160]
-        lines.append(f"| {run_idx} | {name} | {status} | {s['seconds']} | {note} |")
+        tot = s.get("tokens", {}).get("total", 0)
+        grand_tokens += tot
+        lines.append(f"| {run_idx} | {name} | {status} | {s['seconds']} | {tot} | {note} |")
+    lines.append(f"\n**Суммарно токенов за прогон:** {grand_tokens}")
 
     report = "\n".join(lines) + "\n"
-    (BASE_DIR / "summary.md").write_text(report, encoding="utf-8")
+    runs_present = sorted({r for r, _, _ in results})
+    if runs_present:
+        suffix = f"_run{runs_present[0]}-{runs_present[-1]}" if len(runs_present) > 1 else f"_run{runs_present[0]}"
+    else:
+        suffix = ""
+    summary_path = BASE_DIR / f"summary{suffix}.md"
+    summary_path.write_text(report, encoding="utf-8")
 
     # Консольная версия — «расскажи как успехи»
     print(f"\n\n{C.GREEN}{C.BOLD}{'═' * 64}{C.RESET}")
@@ -214,12 +252,15 @@ def write_summary(results: list[tuple[int, str, dict]]) -> None:
             mark, color = "✅", C.GREEN
         else:
             mark, color = "⚠️", C.YELLOW
-        print(f"{color}  {mark} run {run_idx} / {name}  ({s['seconds']}с){C.RESET}")
+        tok = s.get("tokens", {}).get("total", 0)
+        print(f"{color}  {mark} run {run_idx} / {name}  ({s['seconds']}с, {tok} токенов){C.RESET}")
         note = (s["error"] or s["reflection"] or "").replace("\n", " ")[:140]
         if note:
             print(f"{C.GRAY}      {note}{C.RESET}")
-    print(f"\nПодробные транскрипты и файлы: {BASE_DIR}")
-    print(f"Сводка сохранена в: {BASE_DIR / 'summary.md'}")
+    grand = sum(s.get("tokens", {}).get("total", 0) for _, _, s in results)
+    print(f"\n{C.BOLD}Суммарно токенов за весь прогон: {grand}{C.RESET}")
+    print(f"Подробные транскрипты и файлы: {BASE_DIR}")
+    print(f"Сводка сохранена в: {summary_path}")
 
 
 def main() -> None:
@@ -230,7 +271,7 @@ def main() -> None:
     tools = M.TOOLS
 
     results: list[tuple[int, str, dict]] = []
-    for run_idx in range(1, RUNS + 1):
+    for run_idx in range(START_RUN, START_RUN + RUNS):
         run_dir = BASE_DIR / f"run_{run_idx}"
         for name, task_dir, prompt in task_specs(run_idx, run_dir):
             print(f"\n\n{C.MAGENTA}{C.BOLD}{'#' * 64}{C.RESET}")
