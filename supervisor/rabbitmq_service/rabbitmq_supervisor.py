@@ -1,9 +1,10 @@
 import json
 import logging
+
 import pika
 from pika import exceptions
 
-from supervisor.message_handler import commit_handler, error_handler, ack_handler
+from supervisor.message_handler import ack_handler, commit_handler, error_handler, git_handler
 
 logger = logging.getLogger(__name__)
 
@@ -12,9 +13,11 @@ EXCHANGE = "agent_exchange"
 QUEUE = "supervisor_queue"
 ROUTING_KEY = "agent"
 
-class RabbitMQServise:
-    def __init__(self, rabbitmq_url = RABBITMQ_URL,
-                 exchange=EXCHANGE, queue=QUEUE, routing_key=ROUTING_KEY):
+
+class RabbitMQService:
+    def __init__(
+        self, rabbitmq_url=RABBITMQ_URL, exchange=EXCHANGE, queue=QUEUE, routing_key=ROUTING_KEY
+    ):
         self.connection = pika.BlockingConnection(pika.URLParameters(rabbitmq_url))
         self.exchange = exchange
         self.queue = queue
@@ -32,19 +35,16 @@ class RabbitMQServise:
             logger.error("Соединение с RabbitMQ потеряно")
             raise
 
-
     def publish_message(self, message: dict):
         body = json.dumps(message, ensure_ascii=False)
         self.channel.basic_publish(
             exchange=self.exchange,
             routing_key=self.routing_key,
             body=body,
-            properties=pika.BasicProperties(
-                delivery_mode=2,
-                content_type="application/json"
-            )
+            properties=pika.BasicProperties(delivery_mode=2, content_type="application/json"),
         )
         logger.info(f"Message published: {message.get('command')}")
+
     def send_start_command(self, error_text=None, snapshot_text=None):
         message = {
             "command": "start",
@@ -66,8 +66,8 @@ class RabbitMQServise:
             message = json.loads(body.decode("utf-8"))
             message_type = message.get("type")
             logger.info(f"Message consumed: {message_type}")
-            if message_type == "commit":
-                commit_handler(message)
+            if message_type == "git":
+                git_handler(message, self)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 
             elif message_type == "error":

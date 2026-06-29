@@ -1,7 +1,7 @@
 import pathlib
-import subprocess
 
-from git_types import GitError, GitResult
+from contracts.requests import RequestType
+from supervisor.git_service.git_types import GitError
 
 REPO_DIR: pathlib.Path = pathlib.Path.home() / "agent"
 
@@ -9,36 +9,27 @@ REPO_DIR: pathlib.Path = pathlib.Path.home() / "agent"
 class BaseGitService:
     def __init__(
         self,
+        publisher,
         repo_dir: pathlib.Path = REPO_DIR,
         timeout_seconds: int = 30,
     ):
 
+        self.publisher = publisher
         self.repo_dir = repo_dir.resolve()
         self.timeout_seconds = timeout_seconds
 
-    def run_git_command(self, args: list[str]) -> GitResult:
-        git_command = ["git", *args]
+    def build_git_command(self, command: list[str]) -> list[str]:
+        return ["git", *command]
 
-        process = subprocess.run(
-            git_command,
-            cwd=self.repo_dir,
-            capture_output=True,
-            text=True,
-            timeout=self.timeout_seconds,
-            check=False,
-        )
+    def run_git_command(self, command: list[str]) -> None:
+        self.run_git_commands([command])
 
-        result = GitResult(
-            args=git_command,
-            stdout=process.stdout,
-            stderr=process.stderr,
-            returned_code=process.returncode,
-        )
-
-        if process.returncode != 0:
-            raise GitError
-
-        return result
+    def run_git_commands(self, commands: list[list[str]]) -> None:
+        message = {
+            "type": RequestType.GIT,
+            "command": [self.build_git_command(command) for command in commands],
+        }
+        self.publisher.publish_message(message)
 
     def validate_relative_path(self, path: str) -> str:
         candidate = (self.repo_dir / path).resolve()
@@ -50,22 +41,24 @@ class BaseGitService:
 
         return relative_path.as_posix()
 
+    def rollback(self, target_sha: str) -> None:
+        self.run_git_commands(
+            [
+                ["restore", "--source", target_sha, "--staged", "--worktree", "."],
+                ["clean", "-fd"],
+            ]
+        )
+
 
 class AgentGitService(BaseGitService):
-    def status(self) -> str:
-        return self.run_git_command(["status", "--porcelain"]).stdout
+    def status(self) -> None:
+        self.run_git_command(["status", "--porcelain"])
 
-    def diff(self) -> str:
-        return self.run_git_command(["diff"]).stdout
+    def diff(self) -> None:
+        self.run_git_command(["diff"])
 
-    def staged_diff(self) -> str:
-        return self.run_git_command(["diff", "--cached"]).stdout
-
-    def current_branch(self) -> str:
-        return self.run_git_command(["branch", "--show-current"]).stdout.strip()
-
-    def current_revision(self) -> str:
-        return self.run_git_command(["rev-parse", "HEAD"]).stdout.strip()
+    def staged_diff(self) -> None:
+        self.run_git_command(["diff", "--cached"])
 
     def add_paths(self, paths: list[str]) -> None:
         if not paths:
@@ -75,9 +68,9 @@ class AgentGitService(BaseGitService):
 
         self.run_git_command(["add", "--", *safe_paths])
 
-    def commit(self, message: str) -> str:
-        if not self.staged_diff().strip():
-            raise GitError("Cannot commit: no staged changes")
+    def commit(self, message: str, paths: list[str] | None = None) -> None:
+        if paths:
+            self.add_paths(paths)
 
         self.run_git_command(
             [
@@ -90,8 +83,6 @@ class AgentGitService(BaseGitService):
                 message,
             ]
         )
-
-        return self.current_revision()
 
 
 class SupervisorGitService(BaseGitService):
@@ -109,9 +100,6 @@ class SupervisorGitService(BaseGitService):
 
     def create_branch(self, branch_name: str, base_branch: str = "main") -> None:
         self.run_git_command(["switch", "-c", branch_name, base_branch])
-
-    def reset_hard_to_revision(self, revision: str) -> None:
-        self.run_git_command(["reset", "--hard", revision])
 
     def clean_untracked_files(self) -> None:
         self.run_git_command(["clean", "-fd"])

@@ -1,4 +1,4 @@
-from python:3.13-slim
+from python:3.14-slim
 run apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 workdir /hyperagent/supervisor
 copy requirements/supervisor.txt requirements.txt

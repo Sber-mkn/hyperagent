@@ -19,9 +19,7 @@ class Snapshot(Base):
     )
     modification: Mapped[str] = mapped_column(Text)
     __table_args__ = (
-        CheckConstraint(
-            "status in ('PENDING', 'STABLE', 'ERROR')", name="check_status"
-        ),
+        CheckConstraint("status in ('PENDING', 'STABLE', 'ERROR')", name="check_status"),
     )
 
 
@@ -35,4 +33,4 @@ class AgentError(Base):
     error_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=current_timestamp()
     )
-    snapshot: Mapped["Snapshot"] = relationship()
+    snapshot: Mapped[Snapshot] = relationship()

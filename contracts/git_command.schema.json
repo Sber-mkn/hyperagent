@@ -1,0 +1,150 @@
+{
+  "$defs": {
+    "GitAddPathsCommand": {
+      "properties": {
+        "command": {
+          "const": "add_paths",
+          "title": "Command",
+          "type": "string"
+        },
+        "paths": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Paths",
+          "type": "array"
+        }
+      },
+      "required": [
+        "command",
+        "paths"
+      ],
+      "title": "GitAddPathsCommand",
+      "type": "object"
+    },
+    "GitCommitCommand": {
+      "properties": {
+        "command": {
+          "const": "commit",
+          "title": "Command",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "paths": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Paths",
+          "type": "array"
+        }
+      },
+      "required": [
+        "command",
+        "message"
+      ],
+      "title": "GitCommitCommand",
+      "type": "object"
+    },
+    "GitDiffCommand": {
+      "properties": {
+        "command": {
+          "const": "diff",
+          "title": "Command",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "title": "GitDiffCommand",
+      "type": "object"
+    },
+    "GitRollbackCommand": {
+      "properties": {
+        "command": {
+          "const": "rollback",
+          "title": "Command",
+          "type": "string"
+        },
+        "target_sha": {
+          "maxLength": 40,
+          "minLength": 7,
+          "title": "Target Sha",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "target_sha"
+      ],
+      "title": "GitRollbackCommand",
+      "type": "object"
+    },
+    "GitStagedDiffCommand": {
+      "properties": {
+        "command": {
+          "const": "staged_diff",
+          "title": "Command",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "title": "GitStagedDiffCommand",
+      "type": "object"
+    },
+    "GitStatusCommand": {
+      "properties": {
+        "command": {
+          "const": "status",
+          "title": "Command",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "title": "GitStatusCommand",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "add_paths": "#/$defs/GitAddPathsCommand",
+      "commit": "#/$defs/GitCommitCommand",
+      "diff": "#/$defs/GitDiffCommand",
+      "rollback": "#/$defs/GitRollbackCommand",
+      "staged_diff": "#/$defs/GitStagedDiffCommand",
+      "status": "#/$defs/GitStatusCommand"
+    },
+    "propertyName": "command"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/GitStatusCommand"
+    },
+    {
+      "$ref": "#/$defs/GitDiffCommand"
+    },
+    {
+      "$ref": "#/$defs/GitStagedDiffCommand"
+    },
+    {
+      "$ref": "#/$defs/GitAddPathsCommand"
+    },
+    {
+      "$ref": "#/$defs/GitCommitCommand"
+    },
+    {
+      "$ref": "#/$defs/GitRollbackCommand"
+    }
+  ]
+}
