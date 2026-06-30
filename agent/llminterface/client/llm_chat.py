@@ -1,6 +1,5 @@
 from typing import List, Dict, Optional, Literal, TypedDict
 
-from bottle import response
 from pydantic import BaseModel
 from collections import UserList
 

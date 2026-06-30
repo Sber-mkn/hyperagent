@@ -1,7 +1,7 @@
 import json
+from datetime import datetime
 
 import requests
-from bottle import response
 
 from agent.llminterface.client.llm_chat import LLMMessage, LLMChat, LLMTokens, LLMDuration
 from agent.llminterface.client.llm_client import LLMClient
@@ -107,9 +107,11 @@ class OllamaClient(LLMClient):
                     llm_message.content += _content
                     llm_message.thinking += _thinking
 
+                    done = chunk.get("done")
+
                     if chunk.get("done"):
                         llm_message.done = True
-                        llm_message.done_reason = chunk.get("done_reason"),
+                        llm_message.done_reason = chunk.get("done_reason")
                         llm_message.tokens = LLMTokens(
                             prompt=chunk.get("prompt_eval_count"),
                             response=chunk.get("eval_count"),
@@ -119,6 +121,7 @@ class OllamaClient(LLMClient):
                             prompt=chunk.get("prompt_eval_duration"),
                             response=chunk.get("eval_duration"),
                         )
+                        llm_message.dt = datetime.now()
 
                     if on_chunk_think and _thinking:
                         on_chunk_think(_thinking)
