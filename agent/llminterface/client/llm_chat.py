@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional, Literal, TypedDict
+from typing import Any, List, Dict, Optional, Literal, TypedDict
 
 from pydantic import BaseModel
 from collections import UserList
@@ -38,6 +38,8 @@ class LLMMessage(BaseModel):
     thinking: str
     content: str
 
+    tool_calls: Optional[List[Dict]] = None       # запрошенные моделью вызовы инструментов
+
     provider: str = ""
     model: str = ""
 
@@ -56,6 +58,7 @@ class LLMMessage(BaseModel):
             role=message.get("role", "assistant"),
             thinking=message.get("thinking", ""),
             content=message.get("content", ""),
+            tool_calls=message.get("tool_calls"),
             provider=provider,
             model=response.get("model", ""),
             tokens=LLMTokens(
@@ -80,11 +83,22 @@ class LLMMessage(BaseModel):
             dt=datetime.datetime.now()
         )
 
+    @classmethod
+    def tool_result(cls, name: str, content: Any) -> "LLMMessage":
+        # результат выполнения инструмента как сообщение роли "tool"
+        return cls(
+            done=True,
+            role="tool",
+            thinking="",
+            content=f"[{name}] {content}",
+            dt=datetime.datetime.now(),
+        )
+
 
 class LLMChat(UserList):
     def __init__(self, initlist=None):
         messages: List[LLMMessage] = []
-        for i in initlist:
+        for i in initlist or []:
             if isinstance(i, LLMMessage):
                 messages.append(i)
             elif isinstance(i, dict):

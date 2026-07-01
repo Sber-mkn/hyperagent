@@ -15,7 +15,7 @@ class OllamaClient(LLMClient):
     default_ollama_options: dict
     default_model_options: dict
 
-    TOP_LEVEL_KEYS = {"model", "messages", "stream", "format", "keep_alive"}
+    TOP_LEVEL_KEYS = {"model", "messages", "stream", "format", "keep_alive", "tools"}
 
     @classmethod
     def _split_params(cls, parameters: dict) -> tuple[dict, dict]:
@@ -87,7 +87,6 @@ class OllamaClient(LLMClient):
             provider="ollama",
             model=payload.get("model", "")
         )
-        chat.append(llm_message)
 
         response = requests.post(self._url, json=payload, stream=True, timeout=self.timeout)
 
@@ -106,6 +105,10 @@ class OllamaClient(LLMClient):
                     _thinking = message.get("thinking", "")
                     llm_message.content += _content
                     llm_message.thinking += _thinking
+
+                    _tool_calls = message.get("tool_calls")
+                    if _tool_calls:
+                        llm_message.tool_calls = (llm_message.tool_calls or []) + _tool_calls
 
                     done = chunk.get("done")
 
@@ -133,4 +136,4 @@ class OllamaClient(LLMClient):
                 llm_message.done=True
                 llm_message.done_reason="cancelled"
                 response.close()
-        return chat
+        return chat + llm_message

@@ -128,7 +128,7 @@ class ExecEffect(Executable):
         self._effect.run(_input)
         return _input
 
-    def run(self, _input: Any = MISSING):
+    def stream(self, _input: Any = MISSING):
         self._effect.stream(_input)
         return _input
 

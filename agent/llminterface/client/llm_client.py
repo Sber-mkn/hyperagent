@@ -42,5 +42,5 @@ class LLMClient(Executable):
         ...
 
     def run(self, *args, **kwargs):
-        self.send(*args, **kwargs)
+        return self.send(*args, **kwargs)
 
