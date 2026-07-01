@@ -1,22 +1,6 @@
-from agent.tools.computer_tools import (
-    web_search,
-    fetch_url,
-    fetch_url_render,
-    list_files,
-    read_file,
-    run_bash,
-    run_python,
-    write_file,
-    change_file,
-    generate_code,
-    ALL_TOOLS,
-    SAFE_TOOLS,
-    HUMAN_IN_LOOP_TOOLS,
+from agent.tools.registry import (
+    Tool, tool, get_tool, all_tools, tools_spec, run_tool_calls,
 )
+from agent.tools import builtin   # noqa: F401  -- импорт регистрирует встроенные инструменты
 
-__all__ = [
-    "web_search", "fetch_url", "fetch_url_render",
-    "list_files", "read_file",
-    "run_bash", "run_python", "write_file", "change_file", "generate_code",
-    "ALL_TOOLS", "SAFE_TOOLS", "HUMAN_IN_LOOP_TOOLS",
-]
+__all__ = ["Tool", "tool", "get_tool", "all_tools", "tools_spec", "run_tool_calls"]
