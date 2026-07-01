@@ -1,10 +1,12 @@
+import logging
 import pathlib
 
 from contracts.requests import RequestType
 from supervisor.git_service.git_types import GitError
 
-REPO_DIR: pathlib.Path = pathlib.Path.home() / "agent"
+REPO_DIR: pathlib.Path = pathlib.Path.home() / "hyperagent/agent"
 
+logger = logging.getLogger(__name__)
 
 class BaseGitService:
     def __init__(

@@ -1,5 +1,3 @@
-import subprocess
-
 import docker
 
 from database.crud import get_snapshot_by_status
@@ -14,8 +12,7 @@ def rollback_agent():
     snapshot = get_snapshot_by_status("STABLE")
     if not snapshot:
         raise ValueError("Database has not STABLE snapshot")
-    _, snapshot_sha, _ = snapshot
-    subprocess.run(["git", "checkout", "-f", snapshot_sha], cwd=AGENT_REPO, check=True)
+    _, snapshot_sha, snapshot_text = snapshot
 
 
 def start_agent():

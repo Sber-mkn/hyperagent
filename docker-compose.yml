@@ -25,10 +25,11 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-    restart: no
+    restart: always
     volumes:
       - ./agent:/hyperagent/agent:rw
       - ./logs:/hyperagent/logs:rw
+      - ./agent_git:/hyperagent/agent_git:rw
       - ./constitution:/hyperagent/constitution:ro
       - ./agent_immutable:/hyperagent/agent_immutable:ro
   supervisor:
@@ -52,6 +53,7 @@ services:
       - ./supervisor:/hyperagent/supervisor
       - ./database:/hyperagent/database
       - ./requirements:/hyperagent/requirements
+      - ./contracts:/hyperagent/contracts
       - /var/run/docker.sock:/var/run/docker.sock
   rabbitmq:
     image: rabbitmq:3-management

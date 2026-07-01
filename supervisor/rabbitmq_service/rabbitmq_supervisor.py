@@ -4,7 +4,17 @@ import logging
 import pika
 from pika import exceptions
 
-from supervisor.message_handler import ack_handler, commit_handler, error_handler, git_handler
+from contracts.git_commands import (
+    GitAddPathsCommand,
+    GitCommitCommand,
+    GitDiffCommand,
+    GitRollbackCommand,
+    GitStagedDiffCommand,
+    GitStatusCommand,
+)
+from contracts.requests import GitRequest
+from supervisor.git_service.git_service import AgentGitService
+from supervisor.message_handler import ack_handler, commit_handler, error_handler
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +33,7 @@ class RabbitMQService:
         self.queue = queue
         self.routing_key = routing_key
         self.channel = self.connection.channel()
+        self.git_service = AgentGitService(self)
         logger.info("RabbitMQ connection established")
 
     def start_consuming(self):
@@ -37,13 +48,13 @@ class RabbitMQService:
 
     def publish_message(self, message: dict):
         body = json.dumps(message, ensure_ascii=False)
+        logger.info(f"Message published: {message.get('command')}")
         self.channel.basic_publish(
             exchange=self.exchange,
             routing_key=self.routing_key,
             body=body,
             properties=pika.BasicProperties(delivery_mode=2, content_type="application/json"),
         )
-        logger.info(f"Message published: {message.get('command')}")
 
     def send_start_command(self, error_text=None, snapshot_text=None):
         message = {
@@ -67,20 +78,43 @@ class RabbitMQService:
             message_type = message.get("type")
             logger.info(f"Message consumed: {message_type}")
             if message_type == "git":
-                git_handler(message, self)
+                request = GitRequest.model_validate(message)
+                command = request.command
+                if isinstance(command, GitStatusCommand):
+                    self.git_service.status()
+                elif isinstance(command, GitDiffCommand):
+                    self.git_service.diff()
+                elif isinstance(command, GitStagedDiffCommand):
+                    self.git_service.staged_diff()
+                elif isinstance(command, GitAddPathsCommand):
+                    self.git_service.add_paths(command.paths)
+                elif isinstance(command, GitCommitCommand):
+                    self.git_service.commit(command.message, paths=command.paths)
+                elif isinstance(command, GitRollbackCommand):
+                    self.git_service.rollback(command.target_sha)
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+
+            elif message_type == "commit":
+                commit_handler(message)
+                self.send_start_command(snapshot_text=message.get("snapshot_text"))
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 
             elif message_type == "error":
                 error_text = message.get("error")
-                error_handler(message)
-                self.send_start_command(error_text)
+                snapshot_sha, snapshot_text = error_handler(message)
+                self.git_service.rollback(snapshot_sha)
+                self.send_stop_command()
+                self.send_start_command(error_text, snapshot_text)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
-            elif message_type == "ask":
+
+            elif message_type == "ack":
                 ack_handler()
                 ch.basic_ack(delivery_tag=method.delivery_tag)
+
             else:
                 logger.info(f"Unknown type: {message_type}")
                 ch.basic_ack(delivery_tag=method.delivery_tag)
+
         except Exception as e:
-            logger.exception(f"Ошибка при обработке сообщения: {e}")
+            logger.exception(f"Message error: {e}")
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)

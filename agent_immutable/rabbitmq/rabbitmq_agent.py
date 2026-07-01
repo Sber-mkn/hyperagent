@@ -1,6 +1,8 @@
 import json
+import logging
 
 import pika
+from pika import exceptions as exceptions
 
 from agent_immutable.command_worker import execute_command
 from agent_immutable.rabbitmq.message_errors import (
@@ -8,6 +10,8 @@ from agent_immutable.rabbitmq.message_errors import (
     ConnectionLostError,
     MessagePublishError,
 )
+
+logger = logging.getLogger(__name__)
 
 RABBITMQ_URL = "amqp://agent:12345@rabbitmq:5672/"
 EXCHANGE = "agent_exchange"
@@ -33,17 +37,25 @@ class RabbitMQService:
         self.channel = self.connection.channel()
 
     def receive_command(self, ch, method, properties, body):
-        message = json.loads(body.decode("utf-8"))
-        if message.get("type") == "git":
-            execute_command(message["command"])
-            ch.basic_ack(delivery_tag=method.delivery_tag)
-            return
+        try:
+            message = json.loads(body.decode("utf-8"))
+            logger.info(f"Received message: {message.get('type')}")
 
-        self.command = message.get("command", "")
-        self.error_text = message.get("error_text", None)
-        self.snapshot_text = message.get("snapshot_text", None)
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-        ch.stop_consuming()
+            if message.get("type") == "git":
+                logger.info(f"Executing git commands: {message.get('command')}")
+                execute_command(message["command"])
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                return
+
+            self.command = message.get("command", "")
+            self.error_text = message.get("error_text", None)
+            self.snapshot_text = message.get("snapshot_text", None)
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            ch.stop_consuming()
+
+        except Exception as e:
+            logger.exception(f"Error processing command: {e}")
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
     def start_consuming(self):
         self.channel.basic_qos(prefetch_count=1)
@@ -84,10 +96,12 @@ class RabbitMQService:
 
     def send_error(self, error_text):
         message = {"type": "error", "error": error_text}
+        logger.info("Send error: %s", message)
         self.publish_message(message, error_context=error_text)
 
     def send_ack(self):
         message = {"type": "ack"}
+        logger.info("Send ack")
         self.publish_message(message, error_context="ack")
 
     def get_command(self):

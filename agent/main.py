@@ -1,2 +1,3 @@
 def test_logic():
-    raise ValueError("ERROR!")
+    #raise ValueError("test")
+    print("Success")

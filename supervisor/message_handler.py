@@ -11,8 +11,6 @@ from contracts.git_commands import (
 from contracts.requests import GitRequest
 from database.crud import add_error, add_snapshot, get_snapshot_by_status, update_snapshot_status
 from supervisor.git_service.git_service import AgentGitService
-from supervisor.rollback import rollback_agent, start_agent
-
 
 def error_handler(message: json):
     error_text = message.get("error")
@@ -21,9 +19,11 @@ def error_handler(message: json):
         snapshot_id, snapshot_sha, snapshot_message = snapshot
         add_error(snapshot_id, error_text)
         update_snapshot_status(snapshot_id, "ERROR")
-        rollback_agent()
-        start_agent()
-
+    stable_snapshot = get_snapshot_by_status("STABLE")
+    if not stable_snapshot:
+        raise ValueError("Database has not STABLE snapshot")
+    _, snapshot_sha, snapshot_text = stable_snapshot
+    return snapshot_sha, snapshot_text
 
 def commit_handler(message: json):
     commit_sha = message.get("commit_sha")
@@ -36,7 +36,6 @@ def ack_handler():
     if snapshot:
         snapshot_id, _, _ = snapshot
         update_snapshot_status(snapshot_id, "STABLE")
-
 
 def git_handler(message: dict, publisher) -> None:
     request = GitRequest.model_validate(message)

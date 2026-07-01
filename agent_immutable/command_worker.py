@@ -1,13 +1,17 @@
+import os
 import pathlib
 import subprocess
 
-REPO_DIR = pathlib.Path("/hyperagent/agent")
-
+AGENT_DIR = pathlib.Path("/hyperagent/agent")
+GIT_DIR = pathlib.Path("/hyperagent/agent_git/")
 
 class CommandWorker:
-    def __init__(self, repo_dir: pathlib.Path = REPO_DIR, timeout_seconds: int = 30):
+    def __init__(self, repo_dir: pathlib.Path = AGENT_DIR, timeout_seconds: int = 30):
         self.repo_dir = repo_dir.resolve()
         self.timeout_seconds = timeout_seconds
+        self.git_env = os.environ.copy()
+        self.git_env["GIT_DIR"] = str(GIT_DIR)
+        self.git_env["GIT_WORK_TREE"] = str(AGENT_DIR)
 
     def run_command(self, command: list[str]) -> None:
         subprocess.run(
@@ -17,6 +21,7 @@ class CommandWorker:
             text=True,
             timeout=self.timeout_seconds,
             check=True,
+            env=self.git_env,
         )
 
     def run_commands(self, commands: list[list[str]]) -> None:
