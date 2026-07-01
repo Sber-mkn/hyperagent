@@ -7,10 +7,11 @@ import requests
 import datetime
 
 from agent.llminterface.client.llm_chat import LLMChat
+from agent.llminterface.agent_chain.executable import Executable
 
 
 
-class LLMClient(ABC):
+class LLMClient(Executable):
     """Класс для работы с провайдерами LLM"""
 
     provider: str
@@ -40,4 +41,6 @@ class LLMClient(ABC):
     ) -> LLMChat:
         ...
 
+    def run(self, *args, **kwargs):
+        self.send(*args, **kwargs)
 

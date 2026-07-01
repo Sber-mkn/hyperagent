@@ -1,12 +1,13 @@
 from agent.llminterface.client.providers.ollama_client import OllamaClient
 from agent.llminterface.client.llm_chat import LLMChat
+from agent.llminterface.agent_chain.execs import *
 
 from typing import Callable, Tuple, Any, Optional, List, Dict
 import rich
 
-from agent.llminterface.llm_chain.llm_chain import GraphNode, Unit
+from agent.llminterface.agent_chain.executable import *
 
-OLLAMA_URL = "http://100.93.59.55:11434/api/chat"
+OLLAMA_URL = "http://0.0.0.0:11434/api/chat"
 
 if __name__ == "__main__":
     client = OllamaClient(url=OLLAMA_URL, model="gemma4:e2b")
@@ -53,31 +54,22 @@ if __name__ == "__main__":
             {"role": role, "content": content}
         ]
 
-    def llm(messages: List[Dict[str, Any]], on_think, on_content) -> LLMChat:
-        chat = client.stream(
-            LLMChat(messages),
-            on_chunk_think=on_think,
-            on_chunk_content=on_content
+
+
+
+    test = (
+        ExecLambda(lambda : {"name": "Mikhail", "surname": "Putyata"})
+        | ExecEffect(
+            ExecEffect(ExecLambda(lambda d : f"{d['name']} {d['surname']}") | ExecPartial(print, end="\n\n"))
+            | {
+                "original": ExecPassthrough(),
+                "name": lambda d : d["name"],
+                "surname": lambda d: d["surname"],
+                "full" : lambda d: d["surname"] + d["name"]
+            }
+            | ExecEffect(rich.print) | ExecCall(ExecPartial(print, end="\n\n"))
         )
+    )
 
-        return chat
 
-    def stroutput(chat: LLMChat) -> str:
-        return chat[-1].content
-
-    start = GraphNode.start()
-
-    start >> (user_input, "input") >> ("input", Unit(create_message, role="user"), "messages") >> ("messages", Unit(llm, on_think=on_think, on_content=on_content), "chat") >> ("chat", stroutput, "output")
-
-    rich.print(start())
-
-    # chat = client.stream(
-    #     LLMChat([
-    #         {"role": "system", "content": "Ты полезный ассистент."},
-    #         {"role": "user", "content": "Привет, кто ты?"}
-    #     ]),
-    #     on_chunk_think=on_think,
-    #     on_chunk_content=on_content
-    # )
-    # print()
-    # rich.print(chat)
+    rich.print(test.stream())
