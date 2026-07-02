@@ -1,4 +1,4 @@
-from typing import Any, List, Dict, Optional, Literal, TypedDict
+from typing import Any, List, Dict, Optional, Literal, TypedDict, NotRequired
 
 from pydantic import BaseModel
 from collections import UserList
@@ -7,8 +7,9 @@ import datetime
 
 
 class Message(TypedDict):
-    role: Literal["system", "user", "assistant"]
+    role: Literal["system", "user", "assistant", "tool"]
     content: str
+    tool_calls: NotRequired[List[Dict]]
 
 class LLMTokens(BaseModel):
     prompt: Optional[int]
@@ -117,10 +118,23 @@ class LLMChat(UserList):
 
 
     def to_payload(self) -> List[Message]:
-        return [Message(role=m.role, content=m.content) for m in self.data]
+        payload = []
+        for m in self.data:
+            msg = Message(role=m.role, content=m.content)
+            if m.tool_calls:
+                msg["tool_calls"] = m.tool_calls
+            payload.append(msg)
+        return payload
 
-    def __add__(self, other: LLMMessage) -> "LLMChat":
+    def __add__(self, other: "LLMMessage | LLMChat") -> "LLMChat":
+        if isinstance(other, LLMChat):
+            return LLMChat(self.data + other.data)
         return LLMChat(self.data + [other])
+
+    def __radd__(self, other: "LLMMessage | LLMChat") -> "LLMChat":
+        if isinstance(other, LLMChat):
+            return LLMChat(other.data + self.data)
+        return LLMChat([other] + self.data)
 
     def __iadd__(self, other: LLMMessage) -> "LLMChat":
         self.append(other)

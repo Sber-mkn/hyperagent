@@ -1,5 +1,4 @@
 import os
-import re
 import subprocess
 import sys
 
@@ -14,19 +13,21 @@ def web_search(query: str, limit: int = 5) -> str:
         query: поисковый запрос.
         limit: сколько результатов вернуть.
     """
-    import requests
+    from ddgs import DDGS
+    from ddgs.exceptions import RatelimitException, TimeoutException, DDGSException
+
     try:
-        r = requests.get(
-            "https://duckduckgo.com/html/", params={"q": query},
-            headers={"User-Agent": "Mozilla/5.0"}, timeout=30,
-        )
-        r.raise_for_status()
-    except Exception as e:
+        hits = DDGS().text(query, max_results=limit)
+    except RatelimitException:
+        return "[web_search временно заблокирован поисковиком (rate limit), попробуй другой инструмент или повтори запрос позже]"
+    except TimeoutException:
+        return "[web_search: таймаут запроса, попробуй ещё раз]"
+    except DDGSException as e:
         return f"[web_search недоступен: {e}]"
-    hits = re.findall(r'result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', r.text)
+
     if not hits:
         return "(ничего не найдено)"
-    lines = [f"{re.sub('<.*?>', '', title).strip()} — {url}" for url, title in hits[:limit]]
+    lines = [f"{h['title']} — {h['href']}" for h in hits]
     return "\n".join(lines)
 
 

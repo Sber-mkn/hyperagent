@@ -71,8 +71,8 @@ class OllamaClient(LLMClient):
     def stream(
             self,
             chat: LLMChat,
-            on_chunk_think: Optional[Callable[[str], None]],
-            on_chunk_content: Optional[Callable[[str], None]],
+            on_chunk_think: Optional[Callable[[str], None]]=None,
+            on_chunk_content: Optional[Callable[[str], None]]=None,
             **kwargs: int | float | str | bool
     ) -> LLMChat:
         payload = self._create_payload(kwargs)
@@ -112,7 +112,7 @@ class OllamaClient(LLMClient):
 
                     done = chunk.get("done")
 
-                    if chunk.get("done"):
+                    if done:
                         llm_message.done = True
                         llm_message.done_reason = chunk.get("done_reason")
                         llm_message.tokens = LLMTokens(
