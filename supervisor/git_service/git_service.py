@@ -3,7 +3,6 @@ import pathlib
 
 from contracts.requests import RequestType
 from supervisor.git_service.git_types import GitError
-from supervisor.rabbitmq_service.rabbitmq_supervisor import RabbitMQService
 
 REPO_DIR: pathlib.Path = pathlib.Path.home() / "hyperagent/agent"
 
@@ -13,7 +12,7 @@ logger = logging.getLogger(__name__)
 class BaseGitService:
     def __init__(
         self,
-        publisher: RabbitMQService,
+        publisher,
         repo_dir: pathlib.Path = REPO_DIR,
         timeout_seconds: int = 30,
     ):

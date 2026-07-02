@@ -4,17 +4,17 @@ import pathlib
 import logging
 import os
 
+from database.crud import add_snapshot
+
 logger = logging.getLogger(__name__)
 
 AGENT_DIR = pathlib.Path("/hyperagent/agent")
 GIT_DIR = pathlib.Path("/hyperagent/agent_git/")
 AGENT_BRANCH = "working"
+env = os.environ.copy()
 
-
-def git_check():
+def git_init():
     GIT_DIR.mkdir(parents=True, exist_ok=True)
-
-    env = os.environ.copy()
     env["GIT_DIR"] = str(GIT_DIR)
     env["GIT_WORK_TREE"] = str(AGENT_DIR)
 
@@ -95,12 +95,18 @@ def git_check():
                 ["git", "add", ".gitkeep"],
                 cwd=AGENT_DIR, check=True, env=env
             )
-
+        #Взять функцию из service############## коммит + sha в базу
         subprocess.run(
-            ["git", "commit", "-m", "Initial STABLE state"],
+            ["git", "commit", "-m", "Initial first state"],
             cwd=AGENT_DIR, capture_output=True, text=True, env=env
         )
-
+        sha_result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=AGENT_DIR, capture_output=True, text=True, env=env
+        )
+        sha = sha_result.stdout.strip()
+        add_snapshot(sha, "PENDING", "First state")
+        ###################
         current = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=AGENT_DIR, capture_output=True, text=True, env=env
@@ -111,27 +117,27 @@ def git_check():
                 ["git", "switch", "-c", AGENT_BRANCH],
                 cwd=AGENT_DIR, check=True, env=env
             )
-    else:
-        status_result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=AGENT_DIR, capture_output=True, text=True, env=env
-        )
 
-        if status_result.stdout.strip():
-            subprocess.run(
-                ["git", "commit", "-m", "STABLE state (auto-commit on startup)"],
-                cwd=AGENT_DIR, capture_output=True, text=True, env=env
-            )
-            logger.info("Created new commit")
-        else:
-            logger.info("No changes to commit")
-            return None
-
-    sha_result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
+def git_check():
+    status_result = subprocess.run(
+        ["git", "status", "--porcelain"],
         cwd=AGENT_DIR, capture_output=True, text=True, env=env
     )
-    sha = sha_result.stdout.strip()
-    logger.info(f"SHA: {sha}")
-    return sha
+
+    if status_result.stdout.strip():
+        #############################
+        subprocess.run(
+        ["git", "commit", "-m", "Unknown"],
+        cwd=AGENT_DIR, capture_output=True, text=True, env=env
+        )
+        sha_result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=AGENT_DIR, capture_output=True, text=True, env=env
+        )
+        sha = sha_result.stdout.strip()
+        add_snapshot(sha, "PENDING", "Unknown")
+        ##############################
+        logger.info(f"Created new commit, sha: {sha}")
+    else:
+        logger.info("No changes to commit")
 

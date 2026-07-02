@@ -4,7 +4,6 @@ import logging
 import pika
 from pika import exceptions as exceptions
 
-from agent_immutable.command_worker import execute_command
 from agent_immutable.rabbitmq.message_errors import (
     ChannelError,
     ConnectionLostError,
@@ -40,19 +39,11 @@ class RabbitMQService:
         try:
             message = json.loads(body.decode("utf-8"))
             logger.info(f"Received message: {message.get('type')}")
-
-            if message.get("type") == "git":
-                logger.info(f"Executing git commands: {message.get('command')}")
-                execute_command(message["command"])
-                ch.basic_ack(delivery_tag=method.delivery_tag)
-                return
-
             self.command = message.get("command", "")
             self.error_text = message.get("error_text", None)
             self.snapshot_text = message.get("snapshot_text", None)
             ch.basic_ack(delivery_tag=method.delivery_tag)
             ch.stop_consuming()
-
         except Exception as e:
             logger.exception(f"Error processing command: {e}")
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
@@ -90,9 +81,9 @@ class RabbitMQService:
                 body=body,
             ) from e
 
-    def send_commit(self, commit_sha, commit_text):
-        message = {"type": "commit", "commit_sha": commit_sha, "commit_text": commit_text}
-        self.publish_message(message, error_context=commit_sha)
+    def send_commit(self, commit_text):
+        message = {"type": "commit", "commit_text": commit_text}
+        self.publish_message(message, error_context=commit_text)
 
     def send_error(self, error_text):
         message = {"type": "error", "error": error_text}

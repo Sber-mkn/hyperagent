@@ -1,8 +1,7 @@
 import logging
-import pathlib
 
+from supervisor.git_service.git_check import git_check, git_init
 from supervisor.rabbitmq_service.rabbitmq_supervisor import RabbitMQService
-from supervisor.git_service.git_service import SupervisorGitService
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -13,7 +12,8 @@ if __name__ == "__main__":
     logger.info("Starting supervisor")
     try:
         rabbitmq = RabbitMQService()
-        git_service = SupervisorGitService(rabbitmq)
+        git_init()
+        git_check()
         rabbitmq.send_start_command()
         rabbitmq.start_consuming()
     except Exception as e:

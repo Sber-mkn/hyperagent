@@ -1,4 +1,7 @@
 import json
+import os
+import pathlib
+import subprocess
 
 from contracts.git_commands import (
     GitAddPathsCommand,
@@ -12,6 +15,13 @@ from contracts.requests import GitRequest
 from database.crud import add_error, add_snapshot, get_snapshot_by_status, update_snapshot_status
 from supervisor.git_service.git_service import AgentGitService
 
+AGENT_DIR = pathlib.Path("/hyperagent/agent")
+GIT_DIR = pathlib.Path("/hyperagent/agent_git")
+
+env = os.environ.copy()
+env["GIT_DIR"] = str(GIT_DIR)
+env["GIT_WORK_TREE"] = str(AGENT_DIR)
+
 def error_handler(message: json):
     error_text = message.get("error")
     snapshot = get_snapshot_by_status("PENDING")
@@ -23,13 +33,24 @@ def error_handler(message: json):
     if not stable_snapshot:
         raise ValueError("Database has not STABLE snapshot")
     _, snapshot_sha, snapshot_text = stable_snapshot
+    subprocess.run(
+        ["git", "checkout", "-f", snapshot_sha],
+        cwd=AGENT_DIR, check=True, env=env,
+    )
     return snapshot_sha, snapshot_text
 
 def commit_handler(message: json):
-    commit_sha = message.get("commit_sha")
     commit_text = message.get("commit_text")
-    add_snapshot(commit_sha, "PENDING", commit_text)
-
+    subprocess.run(
+        ["git", "commit", "-m", commit_text],
+        cwd=AGENT_DIR, capture_output=True, text=True, env=env
+    )
+    sha_result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=AGENT_DIR, capture_output=True, text=True, env=env
+    )
+    sha = sha_result.stdout.strip()
+    add_snapshot(sha, "PENDING", commit_text)
 
 def ack_handler():
     snapshot = get_snapshot_by_status("PENDING")
