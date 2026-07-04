@@ -14,6 +14,7 @@ from contracts.git_commands import (
 from contracts.requests import GitRequest
 from database.crud import add_error, add_snapshot, get_snapshot_by_status, update_snapshot_status
 from supervisor.git_service.git_service import AgentGitService
+from supervisor.rollback import start_agent
 
 AGENT_DIR = pathlib.Path("/hyperagent/agent")
 GIT_DIR = pathlib.Path("/hyperagent/agent_git")
@@ -37,6 +38,7 @@ def error_handler(message: json):
         ["git", "checkout", "-f", snapshot_sha],
         cwd=AGENT_DIR, check=True, env=env,
     )
+    start_agent()
     return snapshot_sha, snapshot_text
 
 def commit_handler(message: json):

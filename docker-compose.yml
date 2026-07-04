@@ -29,6 +29,7 @@ services:
     volumes:
       - ./agent:/hyperagent/agent:rw
       - ./logs:/hyperagent/logs:rw
+      - ./rabbitmq:/hyperagent/rabbitmq:ro
       - ./constitution:/hyperagent/constitution:ro
       - ./agent_immutable:/hyperagent/agent_immutable:ro
   supervisor:
@@ -53,9 +54,24 @@ services:
       - ./agent_git:/hyperagent/agent_git
       - ./supervisor:/hyperagent/supervisor
       - ./database:/hyperagent/database
+      - ./rabbitmq:/hyperagent/rabbitmq
       - ./requirements:/hyperagent/requirements
       - ./contracts:/hyperagent/contracts
       - /var/run/docker.sock:/var/run/docker.sock
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    container_name: hyperagent_client
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - ./client:/hyperagent/client
+      - ./rabbitmq:/hyperagent/rabbitmq
+    stdin_open: true
+    tty: true
+
   rabbitmq:
     image: rabbitmq:3-management
     container_name: hyperagent_rabbitmq

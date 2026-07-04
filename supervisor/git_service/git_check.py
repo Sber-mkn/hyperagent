@@ -138,6 +138,6 @@ def git_check():
         add_snapshot(sha, "PENDING", "Unknown")
         ##############################
         logger.info(f"Created new commit, sha: {sha}")
-    else:
-        logger.info("No changes to commit")
+        return 1
+    return 0
 

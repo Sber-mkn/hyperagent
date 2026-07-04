@@ -11,6 +11,11 @@
       "tags": ""
     },
     {
+      "name": "client",
+      "password": "12345",
+      "tags": ""
+    },
+    {
       "name": "admin",
       "password": "admin",
       "tags": "administrator"
@@ -35,6 +40,13 @@
       "configure": "",
       "write": "agent_exchange",
       "read": "supervisor_queue"
+    },
+    {
+      "user": "client",
+      "vhost": "/",
+      "configure": "",
+      "write": "agent_exchange",
+      "read": "client_queue"
     }
   ],
   "exchanges": [
@@ -58,6 +70,12 @@
       "vhost": "/",
       "durable": true,
       "auto_delete": false
+    },
+    {
+      "name": "client_queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false
     }
   ],
   "bindings": [
@@ -75,6 +93,14 @@
       "destination": "supervisor_queue",
       "destination_type": "queue",
       "routing_key": "supervisor",
+      "arguments": {}
+    },
+    {
+      "source": "agent_exchange",
+      "vhost": "/",
+      "destination": "client_queue",
+      "destination_type": "queue",
+      "routing_key": "client",
       "arguments": {}
     }
   ]

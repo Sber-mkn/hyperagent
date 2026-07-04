@@ -2,21 +2,22 @@ import logging
 import sys
 import traceback
 
-from agent.main import test_logic
-from agent_immutable.rabbitmq.rabbitmq_agent import RabbitMQService
+from agent.main import agent_logic
+from agent_immutable.rabbitmq.rabbitmq_agent import RabbitMQAgent
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    rabbitmq = RabbitMQService()
+    rabbitmq = RabbitMQAgent()
     rabbitmq.start_consuming()
-    command, error, snapshot = rabbitmq.get_command()
+    command, task, error, snapshot = rabbitmq.get_command()
     if command == "start":
         logger.info("Agent started")
+        logger.info("Task: %s", task)
         try:
-            test_logic()
+            agent_logic()
             rabbitmq.send_ack()
             sys.exit(0)
         except Exception:
@@ -24,8 +25,5 @@ if __name__ == "__main__":
             rabbitmq.send_error(error_text)
             logger.exception(error_text)
             sys.exit(0)
-    elif command == "stop":
-        logger.info("Agent stopped")
-        sys.exit(0)
 
 
