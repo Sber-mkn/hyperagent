@@ -1,53 +1,25 @@
 from typing import Any, Dict
 
-from math import floor, ceil
-from unittest import result
-
 from agent.llminterface.client.llm_client import LLMClient
 from agent.llminterface.client.llm_chat import LLMChat, LLMMessage
 from agent.llminterface.agent_graph.agent_graph import AgentGraph, END
 from agent.llminterface.agent_chain.execs import *
 from agent.tools import tools_spec, run_tool_calls
+from agent.ui import print_section, render_summary, render_tool_call
 
 MAX_REVISIONS = 2
-LINE_LEN = 60
-
 
 
 def build_agent(client: LLMClient) -> AgentGraph:
 
     def print_title(title: str):
-        n = (LINE_LEN - len(title) - 2) / 2
-        print(f"{'=' * floor(n)} {title} {'=' * ceil(n)}")
+        print_section(title)
 
     def print_details(chat: LLMChat, name):
-        message = chat[-1]
-        print(end="\n\n")
-        print_title(f"Сводка ({name})")
-        print(f"""Токены:
-    prompt: {message.tokens.prompt}
-    response: {message.tokens.response}
-    total: {message.tokens.total}
-    
-Длительность:
-    load: {message.duration.load / 1e9} секунд
-    prompt: {message.duration.prompt / 1e9} секунд
-    response: {message.duration.response / 1e9} секунд
-    total: {message.duration.total / 1e9} секунд
-
-Инструменты:
-    {message.tool_calls}
-
-
-""")
+        render_summary(chat[-1], name)
 
     def print_tool(name, args, result):
-        print(f"""Вызван инструмент {name}
-    Параметры:
-        """, end="")
-        s = "\n\t\t".join([f"{key}: {value}" for key, value in args.items()])
-        print(s)
-        print(f"\n\tРезультат: \n\t\t{result}")
+        render_tool_call(name, args, result)
 
 
     chain_orchestrator = (
@@ -61,6 +33,7 @@ def build_agent(client: LLMClient) -> AgentGraph:
         | ExecEffect(ExecLambda(lambda d: f"Оркестратор ({d['model']})") | print_title)
         | {"chat": ExecMultiargument(client)}
         | ExecEffect(ExecLambda(lambda d: d["chat"]) | ExecPartial(print_details, name="Оркестратор"))
+        | {"chat": lambda d: d["chat"], "answer_candidate": lambda d: d["chat"][-1].content}
     )
 
 
@@ -100,8 +73,13 @@ def build_agent(client: LLMClient) -> AgentGraph:
     def route_reflection(state) -> Any:
         verdict = (state.get("reflection") or "").strip().lower()
         if verdict.startswith("окей") or state.get("revisions", 0) >= MAX_REVISIONS:
-            return END
+            return "finalize"                             # рефлектор принял (или лимит) -> фиксируем ответ
         return "model"
+
+    # финал: в answer попадает именно ответ оркестратора, а не рефлектора
+    def finalize_node(state) -> Dict[str, Any]:
+        accepted = (state.get("reflection") or "").strip().lower().startswith("окей")
+        return {"answer": state.get("answer_candidate"), "accepted": accepted}
 
 
     chain_namer = (
@@ -120,10 +98,12 @@ def build_agent(client: LLMClient) -> AgentGraph:
             .add_node("model", chain_orchestrator)
             .add_node("toolNode", tool_node)
             .add_node("reflection", chain_reflector)
+            .add_node("finalize", finalize_node)
             .add_node("namer", chain_namer)
             .set_entry("start")
             .add_edge("start", "model", "namer")
             .add_conditional_edge("model", route_model)
             .add_edge("toolNode", "model")
             .add_conditional_edge("reflection", route_reflection)
+            .add_edge("finalize", END)
             .add_edge("namer", END))

@@ -1,8 +1,26 @@
 import os
+import re
 import subprocess
 import sys
 
 from agent.tools.registry import tool
+
+
+def _html_to_text(html: str) -> str:
+    """Вытащить видимый текст: убрать скрипты/стили/теги, схлопнуть пустоты.
+    Так лимит расходуется на содержимое, а не на <head>/<script>."""
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup(["script", "style", "noscript", "template", "svg", "head"]):
+            tag.decompose()
+        text = soup.get_text("\n")
+    except ImportError:                                # fallback без bs4
+        import html as _html
+        html = re.sub(r"(?is)<(script|style|noscript|template|svg|head)\b.*?</\1>", " ", html)
+        text = _html.unescape(re.sub(r"(?s)<[^>]+>", " ", html))
+    lines = (ln.strip() for ln in text.splitlines())
+    return "\n".join(ln for ln in lines if ln)
 
 
 @tool
@@ -27,29 +45,37 @@ def web_search(query: str, limit: int = 5) -> str:
 
     if not hits:
         return "(ничего не найдено)"
-    lines = [f"{h['title']} — {h['href']}" for h in hits]
-    return "\n".join(lines)
+    blocks = []
+    for h in hits:
+        block = f"{h['title']} — {h['href']}"
+        body = (h.get("body") or "").strip()
+        if body:
+            block += f"\n    {body}"
+        blocks.append(block)
+    return "\n\n".join(blocks)
 
 
 @tool
 def fetch_url(url: str, limit: int = 4000) -> str:
-    """HTTP GET по URL, вернуть текст страницы (усечённо).
+    """HTTP GET по URL, вернуть видимый текст страницы (без разметки, усечённо).
+
+    Для сайтов, где данные подгружаются через JS (напр. gismeteo), текста может
+    почти не быть — тогда используй fetch_url_render.
 
     Args:
         url: адрес страницы.
-        limit: максимум символов в ответе.
+        limit: максимум символов текста в ответе.
     """
     import requests
     r = requests.get(url, headers={"User-Agent": "agent/1.0"}, timeout=30)
     r.raise_for_status()
-    return r.text[:limit]
+    text = _html_to_text(r.text)
+    return text[:limit] if text else "(на странице нет текстового содержимого — вероятно, JS-рендеринг; попробуй fetch_url_render)"
 
 
 @tool
 def fetch_url_render(url: str, limit: int = 4000) -> str:
     """Загрузить страницу с рендерингом JS через headless-браузер.
-
-    При отсутствии playwright деградирует до fetch_url.
 
     Args:
         url: адрес страницы.
@@ -65,7 +91,7 @@ def fetch_url_render(url: str, limit: int = 4000) -> str:
         page.goto(url)
         html = page.content()
         browser.close()
-    return html[:limit]
+    return _html_to_text(html)[:limit]
 
 
 @tool

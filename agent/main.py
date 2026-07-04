@@ -3,38 +3,12 @@ from agent.llminterface.client.llm_chat import LLMChat
 from agent.llminterface.agent_graph.agent_state import AgentState
 from agent.react_agent import build_agent
 from agent.tools import tools_spec
+from agent.ui import stream_print, render_final
 
-OLLAMA_URL = "http://100.93.59.55:11434/api/chat"
-ORCHESTRATOR = "gemma4:e2b"
-NAMER = "gemma4:e2b"
-REFLECTOR = "gemma4:e2b"
-
-
-def stream_print():
-    is_think = False
-    is_content = False
-
-    def on_think(chunk: str):
-        nonlocal is_think, is_content
-        if is_content:
-            print(end="\n\n")
-            is_content = False
-        if not is_think:
-            print("Размышление")
-            is_think = True
-        print(chunk, end="", flush=True)
-
-    def on_content(chunk: str):
-        nonlocal is_think, is_content
-        if is_think:
-            print(end="\n\n")
-            is_think = False
-        if not is_content:
-            print("Размышление")
-            is_content = True
-        print(chunk, end="", flush=True)
-
-    return on_think, on_content
+OLLAMA_URL = "http://0.0.0.0:11434/api/chat"
+ORCHESTRATOR = "gemma4:26b"
+NAMER = "gemma4:26b"
+REFLECTOR = "gemma4:26b"
 
 
 on_think, on_content = stream_print()
@@ -49,12 +23,17 @@ if __name__ == "__main__":
         "orchestrator_model": ORCHESTRATOR,
         "namer_model": NAMER,
         "reflector_model": REFLECTOR,
-        "orchestrator_prompt": "Ты ассистент, который должен помогать пользователю с решением различных задач. Во "
-                               "время работы ты можешь пользоваться любыми предоставленными тебе инструментами. Также "
+        "orchestrator_prompt": "Ты ассистент, который должен помогать пользователю с решением любых задач. Во "
+                               "время работы ты можешь пользоваться любыми предоставленными тебе инструментами для того"
+                               ", чтобы решить поставленную задачу. Также "
                                "при необходимости ты можешь писать python-код и запускать его с помощью "
                                "соответственных инстурментов. Всегда проверяй факты с помощью поиска в интернете, а "
                                "также если возникают проблемы с использованием API, библиотек и т.д. - также обращайся "
-                               "за помощью в интернет.",
+                               "за помощью в интернет."
+                               ""
+                               "Если пользователь просит что-то найти, то ты обязан не просто дать ему ссылки на нужные"
+                               " ресурсы, а полностью ответить на вопрос. Твоих инструментов 100% хватает для решения "
+                               "любой задачи.",
         "namer_prompt": "Придумай очень короткое название для беседы (3 - 5 слова) по запросу пльзователя. Ответь "
                         "только названием.",
         "reflector_prompt": "Твоя задача оценить решение задачи представленное в этом диалоге. Если представленное ты "
@@ -68,4 +47,4 @@ if __name__ == "__main__":
     })
 
     final = agent.stream(initial)
-    print(f"title: {final['title']}")
+    render_final(final)

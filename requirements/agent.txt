@@ -1,0 +1,8 @@
+requests==2.34.2
+pydantic==2.13.4
+rich==15.0.0
+ddgs==9.14.4
+
+# опциональные
+beautifulsoup4==4.15.0
+playwright==1.61.0
