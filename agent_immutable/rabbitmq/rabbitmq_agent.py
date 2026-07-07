@@ -13,9 +13,14 @@ ROUTING_KEY = "supervisor"
 
 
 class RabbitMQAgent(RabbitMQBase):
-    def __init__(self, user = USER, password = PASSWORD,
-                exchange=EXCHANGE, queue=AGENT_QUEUE,
-                routing_key=ROUTING_KEY,):
+    def __init__(
+        self,
+        user=USER,
+        password=PASSWORD,
+        exchange=EXCHANGE,
+        queue=AGENT_QUEUE,
+        routing_key=ROUTING_KEY,
+    ):
         super().__init__(user, password, exchange, queue, routing_key)
         self.command = None
         self.error_text = None
@@ -32,13 +37,10 @@ class RabbitMQAgent(RabbitMQBase):
             self.snapshot_text = message.get("snapshot_text", None)
             ch.basic_ack(delivery_tag=method.delivery_tag)
             ch.stop_consuming()
+
         except Exception as e:
             logger.exception(f"Error processing command: {e}")
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-
-    def send_commit(self, commit_text):
-        message = {"type": "commit", "commit_text": commit_text}
-        self.publish_message(message)
 
     def send_error(self, error_text):
         message = {"type": "error", "error": error_text}

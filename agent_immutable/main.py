@@ -20,10 +20,9 @@ if __name__ == "__main__":
             agent_logic()
             rabbitmq.send_ack()
             sys.exit(0)
+
         except Exception:
             error_text = traceback.format_exc()
             rabbitmq.send_error(error_text)
             logger.exception(error_text)
             sys.exit(0)
-
-

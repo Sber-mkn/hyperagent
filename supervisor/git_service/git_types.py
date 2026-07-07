@@ -10,4 +10,4 @@ class GitResult:
     args: list[str]
     stdout: str
     stderr: str
-    returned_code: int
+    return_code: int

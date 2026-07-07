@@ -14,10 +14,17 @@ ROUTING_KEY = "agent"
 
 logger = logging.getLogger(__name__)
 
+
 class RabbitMQClient(RabbitMQBase):
-    def __init__(self, user=USER, password = PASSWORD, exchange=EXCHANGE,
-                 queue=CLIENT_QUEUE, routing_key=ROUTING_KEY):
-        super().__init__(user,password,exchange, queue, routing_key)
+    def __init__(
+        self,
+        user=USER,
+        password=PASSWORD,
+        exchange=EXCHANGE,
+        queue=CLIENT_QUEUE,
+        routing_key=ROUTING_KEY,
+    ):
+        super().__init__(user, password, exchange, queue, routing_key)
         self.is_ready = False
         self.pending_message = None
         self.ready_event = threading.Event()
@@ -48,10 +55,6 @@ class RabbitMQClient(RabbitMQBase):
             logger.exception(f"Error processing message: {e}")
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
-        except Exception as e:
-            logger.exception(f"Error processing message: {e}")
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-
     def publish(self):
         if self.pending_message is not None:
             body = json.dumps(self.pending_message, ensure_ascii=False)
@@ -74,16 +77,13 @@ class RabbitMQClient(RabbitMQBase):
 
             try:
                 user_input = input("Enter your request: ").strip()
-                user_input = user_input.encode('utf-8', errors='replace').decode('utf-8')
+                user_input = user_input.encode("utf-8", errors="replace").decode("utf-8")
             except EOFError:
                 print("\nStdin closed, exiting")
                 break
 
             if not user_input:
                 continue
-            message = {
-                "task": user_input,
-                "command": "start"
-            }
+            message = {"task": user_input, "command": "start"}
             self.pending_message = message
             self.connection.add_callback_threadsafe(self.publish)

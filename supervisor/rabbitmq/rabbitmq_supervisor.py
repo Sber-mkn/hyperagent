@@ -11,8 +11,8 @@ from contracts.git_commands import (
 )
 from contracts.requests import GitRequest
 from rabbitmq.rabbitmq_service import RabbitMQBase
-from supervisor.git_service.git_service import AgentGitService
-from supervisor.message_handler import ack_handler, commit_handler, error_handler
+from supervisor.git_service.git_service import GitService
+from supervisor.message_handler import ack_handler, error_handler, git_handler
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +25,17 @@ CLIENT_KEY = "client"
 
 
 class RabbitMQSupervisor(RabbitMQBase):
-    def __init__(self, user = USER, password = PASSWORD, exchange=EXCHANGE,
-                queue=QUEUE, routing_key=ROUTING_KEY):
+    def __init__(
+        self,
+        git_service: GitService,
+        user=USER,
+        password=PASSWORD,
+        exchange=EXCHANGE,
+        queue=QUEUE,
+        routing_key=ROUTING_KEY,
+    ):
         super().__init__(user, password, exchange, queue, routing_key)
-        self.git_service = AgentGitService(self)
+        self.git_service = git_service
         logger.info("RabbitMQ connection established")
 
     def send_start_command(self, error_text=None, snapshot_text=None):
@@ -54,30 +61,12 @@ class RabbitMQSupervisor(RabbitMQBase):
             message_type = message.get("type")
             logger.info(f"Message consumed: {message_type}")
             if message_type == "git":
-                request = GitRequest.model_validate(message)
-                command = request.command
-                if isinstance(command, GitStatusCommand):
-                    self.git_service.status()
-                elif isinstance(command, GitDiffCommand):
-                    self.git_service.diff()
-                elif isinstance(command, GitStagedDiffCommand):
-                    self.git_service.staged_diff()
-                elif isinstance(command, GitAddPathsCommand):
-                    self.git_service.add_paths(command.paths)
-                elif isinstance(command, GitCommitCommand):
-                    self.git_service.commit(command.message, paths=command.paths)
-                elif isinstance(command, GitRollbackCommand):
-                    self.git_service.rollback(command.target_sha)
-                ch.basic_ack(delivery_tag=method.delivery_tag)
-
-            elif message_type == "commit":
-                commit_handler(message)
-                self.send_start_command(snapshot_text=message.get("snapshot_text"))
+                git_handler(message, self.git_service)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 
             elif message_type == "error":
                 error_text = message.get("error")
-                snapshot_sha, snapshot_text = error_handler(message)
+                snapshot_text = error_handler(message)
                 self.send_start_command(error_text, snapshot_text)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 

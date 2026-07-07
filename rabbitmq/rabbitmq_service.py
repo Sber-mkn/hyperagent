@@ -1,17 +1,15 @@
 import json
 import logging
+from abc import ABC, abstractmethod
+
 import pika
 from pika.exceptions import AMQPError
 
 logger = logging.getLogger(__name__)
 
-from abc import ABC, abstractmethod
-
 
 class RabbitMQBase(ABC):
-    def __init__(
-            self, user, password, exchange,
-            queue, routing_key):
+    def __init__(self, user, password, exchange, queue, routing_key):
         rabbitmq_url = f"amqp://{user}:{password}@rabbitmq:5672/"
         self.connection = pika.BlockingConnection(pika.URLParameters(rabbitmq_url))
         self.exchange = exchange
@@ -22,10 +20,12 @@ class RabbitMQBase(ABC):
 
     def publish_message(self, message: dict, routing_key=None):
         body = json.dumps(message, ensure_ascii=False)
+        if not routing_key:
+            routing_key = self.routing_key
         try:
             self.channel.basic_publish(
                 exchange=self.exchange,
-                routing_key=routing_key or self.routing_key,
+                routing_key=routing_key,
                 body=body,
                 properties=pika.BasicProperties(delivery_mode=2, content_type="application/json"),
             )
