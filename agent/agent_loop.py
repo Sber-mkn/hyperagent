@@ -18,6 +18,7 @@ from agent.memory.context_manager import ContextManager
 from agent.memory.store import MemoryStore, Turn
 from agent.memory.summarizer import Summarizer
 from agent.tools import run_tool_calls, tools_spec
+from agent.tools.text_tool_calls import clean_final_answer, extract_text_tool_calls, looks_like_tool_dump
 
 
 def _sanitize_tool_calls(tool_calls: list) -> list:
@@ -92,6 +93,15 @@ class ReactAgent:
         compressions = 0
         start = time.perf_counter()
 
+        from agent.tools.codegen import activate_codegen, deactivate_codegen
+
+        activate_codegen(self.client, self.agent_model)
+        try:
+            return self._run_loop(start, compressions)
+        finally:
+            deactivate_codegen()
+
+    def _run_loop(self, start: float, compressions: int) -> AgentResult:
         final_answer = ""
         text_only_steps = 0
         for step in range(1, self.max_iterations + 1):
@@ -115,7 +125,11 @@ class ReactAgent:
             self._record_usage(assistant)
 
             content = assistant.content or ""
-            tool_calls = assistant.tool_calls or []
+            tool_calls = list(assistant.tool_calls or [])
+            if not tool_calls:
+                tool_calls = extract_text_tool_calls(content)
+                if tool_calls:
+                    self._log("parsed tool call(s) from model text (XML format)")
             self._store.append_turn(
                 Turn(
                     role="assistant",
@@ -148,13 +162,16 @@ class ReactAgent:
                     self._log(
                         f"stopping after {text_only_steps} text-only replies without tools"
                     )
-                    final_answer = content.strip() or "(model did not use tools)"
+                    final_answer = clean_final_answer(content) or "(model did not use tools)"
                     break
                 continue
 
-            final_answer = content.strip()
-            if final_answer:
+            final_answer = clean_final_answer(content)
+            if final_answer and not looks_like_tool_dump(content):
                 break
+            if looks_like_tool_dump(content):
+                self._log("model returned tool XML in final reply — continuing")
+                continue
 
         elapsed = time.perf_counter() - start
         return AgentResult(
