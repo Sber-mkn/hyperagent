@@ -1,15 +1,37 @@
 from __future__ import annotations
 
+import copy
+import json
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from agent.config import DATA_DIR, L2_TOKEN_BUDGET, MAX_ITERATIONS, MAX_OUTPUT_TOKENS, TEXT_ONLY_STEP_LIMIT
+from agent.config import (
+    DATA_DIR,
+    L2_TOKEN_BUDGET,
+    MAX_ITERATIONS,
+    MAX_OUTPUT_TOKENS,
+    TEXT_ONLY_STEP_LIMIT,
+)
 from agent.llminterface.client.llm_client import LLMClient
 from agent.memory.context_manager import ContextManager
 from agent.memory.store import MemoryStore, Turn
 from agent.memory.summarizer import Summarizer
 from agent.tools import run_tool_calls, tools_spec
+
+
+def _sanitize_tool_calls(tool_calls: list) -> list:
+    """Replace invalid JSON in tool-call arguments so the chat history stays API-valid."""
+    sanitized = copy.deepcopy(tool_calls)
+    for call in sanitized:
+        fn = call.get("function", call) if isinstance(call, dict) else call
+        args = fn.get("arguments") if isinstance(fn, dict) else None
+        if isinstance(args, str):
+            try:
+                json.loads(args or "{}")
+            except json.JSONDecodeError:
+                fn["arguments"] = "{}"
+    return sanitized
 
 
 @dataclass
@@ -95,7 +117,11 @@ class ReactAgent:
             content = assistant.content or ""
             tool_calls = assistant.tool_calls or []
             self._store.append_turn(
-                Turn(role="assistant", content=content, tool_calls=tool_calls or None)
+                Turn(
+                    role="assistant",
+                    content=content,
+                    tool_calls=_sanitize_tool_calls(tool_calls) or None,
+                )
             )
 
             if tool_calls:

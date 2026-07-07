@@ -13,9 +13,14 @@ ROUTING_KEY = "supervisor"
 
 
 class RabbitMQAgent(RabbitMQBase):
-    def __init__(self, user = USER, password = PASSWORD,
-                exchange=EXCHANGE, queue=AGENT_QUEUE,
-                routing_key=ROUTING_KEY,):
+    def __init__(
+        self,
+        user=USER,
+        password=PASSWORD,
+        exchange=EXCHANGE,
+        queue=AGENT_QUEUE,
+        routing_key=ROUTING_KEY,
+    ):
         super().__init__(user, password, exchange, queue, routing_key)
         self.command = None
         self.error_text = None
@@ -47,13 +52,16 @@ class RabbitMQAgent(RabbitMQBase):
 
     def send_result(self, result_json):
         result_dict = json.loads(result_json)
+        client_block = result_dict.get("client", result_dict)
         message = {
             "type": "result",
-            "status": result_dict.get("status"),
-            "summary": result_dict.get("summary"),
-            "answer": result_dict.get("answer"),
-            "artifacts": result_dict.get("artifacts")
+            "status": client_block.get("status"),
+            "summary": client_block.get("summary"),
+            "answer": client_block.get("answer"),
+            "artifacts": client_block.get("artifacts"),
+            "metrics": result_dict.get("metrics"),
         }
+        logger.info("Send result to client (status=%s)", message.get("status"))
         self.publish_message(message, "client")
 
     def send_ack(self):

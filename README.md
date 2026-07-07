@@ -52,8 +52,8 @@ Wait for `--- Result ---` (15–30s). Files appear in `./workdir/` on the host.
 |----------|---------|---------|
 | `LLM_PROVIDER` | `openrouter` | `openrouter` or `ollama` |
 | `OPENROUTER_API_KEY` | — | **Required** for OpenRouter |
-| `AGENT_MODEL` | `qwen/qwen3-8b` | Main model |
-| `SUMMARIZER_MODEL` | same as agent | L2→L3 compression |
+| `AGENT_MODEL` | `qwen/qwen3-coder` | Main model (must support structured tool_calls) |
+| `SUMMARIZER_MODEL` | `qwen/qwen3-8b` | L2→L3 compression (cheaper) |
 | `V3_MAX_OUTPUT_TOKENS` | `512` | Cap per model call |
 | `V3_MAX_ITERATIONS` | `20` | ReAct loop limit |
 

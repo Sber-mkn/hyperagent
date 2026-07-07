@@ -17,7 +17,7 @@ PROVIDER = os.getenv("LLM_PROVIDER", "openrouter").strip().lower()
 
 AGENT_MODEL = os.getenv(
     "AGENT_MODEL",
-    os.getenv("ORCHESTRATOR_MODEL", "qwen/qwen3-8b"),
+    os.getenv("ORCHESTRATOR_MODEL", "qwen/qwen3-coder"),
 )
 SUMMARIZER_MODEL = os.getenv("SUMMARIZER_MODEL", AGENT_MODEL)
 MAX_OUTPUT_TOKENS = int(os.getenv("V3_MAX_OUTPUT_TOKENS", "512"))
@@ -26,8 +26,23 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 OLLAMA_CHAT_URL = os.getenv("OLLAMA_CHAT_URL", "http://127.0.0.1:11434/api/chat")
 
+_DOCKER_CONSTITUTION = Path("/hyperagent/constitution")
+CONSTITUTION_DIR = Path(
+    os.getenv(
+        "CONSTITUTION_DIR",
+        _DOCKER_CONSTITUTION if _DOCKER_CONSTITUTION.exists() else _REPO_ROOT / "constitution",
+    )
+)
+
 DATA_DIR = Path(os.getenv("V3_DATA_DIR", _AGENT_DIR / "data"))
-AGENT_ROOT = Path(os.getenv("AGENT_ROOT", "/hyperagent/agent"))
+
+
+def _default_agent_root() -> Path:
+    docker = Path("/hyperagent/agent")
+    return docker if docker.is_dir() else _AGENT_DIR
+
+
+AGENT_ROOT = Path(os.getenv("AGENT_ROOT") or str(_default_agent_root()))
 AGENT_WORKDIR = Path(os.getenv("AGENT_WORKDIR", _REPO_ROOT / "workdir"))
 L2_TOKEN_BUDGET = int(os.getenv("V3_L2_TOKEN_BUDGET", "3000"))
 MAX_ITERATIONS = int(os.getenv("V3_MAX_ITERATIONS", "20"))

@@ -13,6 +13,7 @@ from contracts.requests import GitRequest
 from rabbitmq.rabbitmq_service import RabbitMQBase
 from supervisor.git_service.git_service import AgentGitService
 from supervisor.message_handler import ack_handler, commit_handler, error_handler
+from supervisor.git_service.git_check import git_check
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,7 @@ class RabbitMQSupervisor(RabbitMQBase):
 
             elif message_type == "ack":
                 ack_handler()
+                git_check()
                 self.send_ready_message()
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 

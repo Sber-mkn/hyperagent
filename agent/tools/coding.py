@@ -1,4 +1,4 @@
-"""File and shell tools for the V3 agent (no secondary LLM calls)."""
+"""File and shell tools for the V3 agent."""
 
 from __future__ import annotations
 
@@ -6,8 +6,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from agent.config import AGENT_ROOT, AGENT_WORKDIR
+from agent.config import AGENT_ROOT
 from agent.session_events import current
+from agent.tools.paths import resolve_write_path
 from agent.tools.registry import tool
 
 
@@ -34,7 +35,10 @@ def read_file(path: str) -> str:
 @tool
 def write_file(path: str, content: str) -> str:
     """Create or overwrite a file with the full new content."""
-    p = Path(path)
+    try:
+        p = resolve_write_path(path)
+    except PermissionError as exc:
+        return f"ERROR: {exc}"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding="utf-8")
     _record_write(p)
@@ -49,23 +53,6 @@ def list_files(directory: str) -> str:
         return f"ERROR: directory does not exist: {directory}"
     files = [str(p) for p in base.rglob("*") if p.is_file() and ".git" not in p.parts]
     return "\n".join(files) if files else "(empty)"
-
-
-@tool
-def change_file(path: str, old: str, new: str, encoding: str = "utf-8") -> str:
-    """Replace one exact text fragment in a file. The old fragment must be unique."""
-    p = Path(path)
-    if not p.exists():
-        return f"ERROR: file does not exist: {path}"
-    original = p.read_text(encoding=encoding)
-    count = original.count(old)
-    if count == 0:
-        return "ERROR: old fragment not found"
-    if count > 1:
-        return f"ERROR: old fragment appears {count} times; provide a more unique fragment"
-    updated = original.replace(old, new, 1)
-    p.write_text(updated, encoding=encoding)
-    return f"UPDATED {path}"
 
 
 @tool

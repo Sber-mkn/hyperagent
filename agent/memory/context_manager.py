@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.config import AGENT_WORKDIR
+from agent.config import AGENT_WORKDIR, CONSTITUTION_DIR
 from agent.llminterface.client.llm_chat import LLMChat, LLMMessage
 from agent.memory.store import MemoryStore, Turn
 
@@ -26,11 +26,17 @@ class ContextManager:
     def __init__(self, store: MemoryStore):
         self.store = store
 
+    def _read_constitution(self) -> str:
+        path = CONSTITUTION_DIR / "identity.md"
+        if path.exists():
+            return path.read_text(encoding="utf-8").strip()
+        return ""
+
     def build_working_chat(self) -> LLMChat:
         """Return system + user task + compressed history + recent tail for the ReAct loop."""
         parts: list[str] = []
 
-        l0 = self.store.read_identity()
+        l0 = self._read_constitution() or self.store.read_identity()
         if l0:
             parts.append(l0)
 
