@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional, Callable
 
 import datetime
 
-from agent.llminterface.client.llm_chat import LLMChat
+from agent.llminterface.client.llm_chat import LLMChat, LLMMessage
 from agent.llminterface.agent_chain.executable import Executable
 
 
@@ -19,6 +19,14 @@ class LLMClient(Executable):
     end_time: datetime.datetime
 
     timeout: int
+
+    @abstractmethod
+    def _parse_response(self, response: Dict[str, Any]) -> LLMMessage:
+        """Разобрать сырой ответ провайдера в LLMMessage.
+        Здесь и только здесь клиент знает формат своего API (поля токенов,
+        длительностей, thinking/content и т.д.) — LLMMessage остаётся
+        провайдер-агностичным."""
+        ...
 
     @abstractmethod
     def send(

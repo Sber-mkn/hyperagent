@@ -54,6 +54,30 @@ class OllamaClient(LLMClient):
         self.default_ollama_options, self.default_model_options = self._split_params(parameters)
 
 
+    def _parse_response(self, response: Dict[str, Any]) -> LLMMessage:
+        message = response.get("message", {})
+
+        return LLMMessage(
+            done=response.get("done", True),
+            done_reason=response.get("done_reason"),
+            role=message.get("role", "assistant"),
+            thinking=message.get("thinking", ""),
+            content=message.get("content", ""),
+            tool_calls=message.get("tool_calls"),
+            provider="ollama",
+            model=response.get("model", ""),
+            tokens=LLMTokens(
+                prompt=response.get("prompt_eval_count"),
+                response=response.get("eval_count"),
+            ),
+            duration=LLMDuration(
+                load=response.get("load_duration"),
+                prompt=response.get("prompt_eval_duration"),
+                response=response.get("eval_duration"),
+            ),
+            dt=datetime.now(),
+        )
+
     def send(
             self,
             chat: LLMChat,
@@ -66,7 +90,7 @@ class OllamaClient(LLMClient):
         response = requests.post(self._url, json=payload, stream=False, timeout=self.timeout)
         response.raise_for_status()
 
-        return chat + LLMMessage.from_response(response.json(), "ollama")
+        return chat + self._parse_response(response.json())
 
     def stream(
             self,
@@ -98,39 +122,27 @@ class OllamaClient(LLMClient):
                     if not line:
                         continue
 
-                    chunk = json.loads(line.decode("utf-8"))
-                    message = chunk.get("message", {})
+                    delta = self._parse_response(json.loads(line.decode("utf-8")))
 
-                    _content = message.get("content", "")
-                    _thinking = message.get("thinking", "")
-                    llm_message.content += _content
-                    llm_message.thinking += _thinking
+                    llm_message.content += delta.content
+                    llm_message.thinking += delta.thinking
 
-                    _tool_calls = message.get("tool_calls")
-                    if _tool_calls:
-                        llm_message.tool_calls = (llm_message.tool_calls or []) + _tool_calls
+                    if delta.tool_calls:
+                        llm_message.tool_calls = (llm_message.tool_calls or []) + delta.tool_calls
 
-                    done = chunk.get("done")
-
-                    if done:
+                    if delta.done:
                         llm_message.done = True
-                        llm_message.done_reason = chunk.get("done_reason")
-                        llm_message.tokens = LLMTokens(
-                            prompt=chunk.get("prompt_eval_count"),
-                            response=chunk.get("eval_count"),
-                        )
-                        llm_message.duration = LLMDuration(
-                            load=chunk.get("load_duration"),
-                            prompt=chunk.get("prompt_eval_duration"),
-                            response=chunk.get("eval_duration"),
-                        )
-                        llm_message.dt = datetime.now()
+                        llm_message.done_reason = delta.done_reason
+                        llm_message.model = delta.model or llm_message.model
+                        llm_message.tokens = delta.tokens
+                        llm_message.duration = delta.duration
+                        llm_message.dt = delta.dt
 
-                    if on_chunk_think and _thinking:
-                        on_chunk_think(_thinking)
+                    if on_chunk_think and delta.thinking:
+                        on_chunk_think(delta.thinking)
 
-                    if on_chunk_content and _content:
-                        on_chunk_content(_content)
+                    if on_chunk_content and delta.content:
+                        on_chunk_content(delta.content)
         finally:
             if not llm_message.done:
                 llm_message.done=True

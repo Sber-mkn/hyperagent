@@ -49,7 +49,7 @@ def build_agent(client: LLMClient) -> AgentGraph:
         for call, (name, result) in zip(calls, results):
             args = call.get("function", call).get("arguments") or {}
             print_tool(name, args, result)
-            chat = chat + LLMMessage.tool_result(name, result)
+            chat = chat + LLMMessage.tool_result(name, result, tool_call_id=call.get("id"))
         return {"chat": chat}
 
     chain_reflector = (

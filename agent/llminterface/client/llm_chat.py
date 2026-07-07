@@ -10,6 +10,7 @@ class Message(TypedDict):
     role: Literal["system", "user", "assistant", "tool"]
     content: str
     tool_calls: NotRequired[List[Dict]]
+    tool_call_id: NotRequired[str]
 
 class LLMTokens(BaseModel):
     prompt: Optional[int]
@@ -39,7 +40,8 @@ class LLMMessage(BaseModel):
     thinking: str
     content: str
 
-    tool_calls: Optional[List[Dict]] = None       # запрошенные моделью вызовы инструментов
+    tool_calls: Optional[List[Dict]] = None       # запрошенные вызовы инструментов
+    tool_call_id: Optional[str] = None            # для role="tool": id вызова, на который отвечаем
 
     provider: str = ""
     model: str = ""
@@ -48,31 +50,6 @@ class LLMMessage(BaseModel):
     duration: Optional[LLMDuration] = None
 
     dt: Optional[datetime.datetime] = None
-
-    @classmethod
-    def from_response(cls, response: dict, provider: str) -> "LLMMessage":
-        message = response.get("message", {})
-
-        return cls(
-            done=response.get("done", True),
-            done_reason=response.get("done_reason"),
-            role=message.get("role", "assistant"),
-            thinking=message.get("thinking", ""),
-            content=message.get("content", ""),
-            tool_calls=message.get("tool_calls"),
-            provider=provider,
-            model=response.get("model", ""),
-            tokens=LLMTokens(
-                prompt=response.get("prompt_eval_count"),
-                response=response.get("eval_count"),
-            ),
-            duration=LLMDuration(
-                load=response.get("load_duration"),
-                prompt=response.get("prompt_eval_duration"),
-                response=response.get("eval_duration"),
-            ),
-            dt=datetime.datetime.now(),
-        )
 
     @classmethod
     def from_message(cls, message: Message):
@@ -85,13 +62,15 @@ class LLMMessage(BaseModel):
         )
 
     @classmethod
-    def tool_result(cls, name: str, content: Any) -> "LLMMessage":
-        # результат выполнения инструмента как сообщение роли "tool"
+    def tool_result(cls, name: str, content: Any, tool_call_id: Optional[str] = None) -> "LLMMessage":
+        # результат выполнения инструмента как сообщение роли "tool".
+        # tool_call_id обязателен для openai, в ollama игнорируется.
         return cls(
             done=True,
             role="tool",
             thinking="",
             content=f"[{name}] {content}",
+            tool_call_id=tool_call_id,
             dt=datetime.datetime.now(),
         )
 
@@ -123,6 +102,8 @@ class LLMChat(UserList):
             msg = Message(role=m.role, content=m.content)
             if m.tool_calls:
                 msg["tool_calls"] = m.tool_calls
+            if m.tool_call_id:
+                msg["tool_call_id"] = m.tool_call_id
             payload.append(msg)
         return payload
 
