@@ -31,10 +31,12 @@ class RabbitMQSupervisor(RabbitMQBase):
         self.git_service = AgentGitService(self)
         logger.info("RabbitMQ connection established")
 
-    def send_start_command(self, error_text=None, snapshot_text=None):
+    def send_start_command(self, task=None, error_text=None, snapshot_text=None):
         message = {
             "command": "start",
         }
+        if task:
+            message["task"]=task
         if error_text:
             message["error_text"] = error_text
         if snapshot_text:
@@ -77,12 +79,15 @@ class RabbitMQSupervisor(RabbitMQBase):
 
             elif message_type == "error":
                 error_text = message.get("error")
+                task = message.get("task")
                 snapshot_sha, snapshot_text = error_handler(message)
-                self.send_start_command(error_text, snapshot_text)
+                if snapshot_sha:
+                    self.send_start_command(task, error_text, snapshot_text)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 
             elif message_type == "ack":
                 ack_handler()
+                self.send_ready_message()
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 
             else:

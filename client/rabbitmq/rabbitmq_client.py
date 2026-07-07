@@ -25,18 +25,19 @@ class RabbitMQClient(RabbitMQBase):
     def receive_message(self, ch, method, properties, body):
         try:
             message = json.loads(body.decode("utf-8"))
-            message_type = message.get("type", "")
+            message_type = message.get("type")
             logger.info(f"Received message: {message_type}")
             if message_type == "ready":
                 self.is_ready = True
                 self.ready_event.set()
-                print("\nHyperagent is READY")
+                print("\nHyperagent is READY\n")
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 
             elif message_type == "result":
                 print(f"\nResult received")
                 print(f"Status: {message.get('status')}")
-                print(f"Result: {message.get('result')}")
+                print(f"Answer: {message.get('answer')}")
+                print(f"Artifacts: {message.get('artifacts')}")
                 self.is_ready = False
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 

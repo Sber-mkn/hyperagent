@@ -26,8 +26,16 @@ services:
       rabbitmq:
         condition: service_healthy
     restart: always
+    env_file:
+      - ./agent/.env
+    environment:
+      - V3_DATA_DIR=/hyperagent/agent/data
+      - AGENT_WORKDIR=/hyperagent/workdir
+      - AGENT_ROOT=/hyperagent/agent
+      - PYTHONUNBUFFERED=1
     volumes:
       - ./agent:/hyperagent/agent:rw
+      - ./workdir:/hyperagent/workdir:rw
       - ./logs:/hyperagent/logs:rw
       - ./rabbitmq:/hyperagent/rabbitmq:ro
       - ./constitution:/hyperagent/constitution:ro

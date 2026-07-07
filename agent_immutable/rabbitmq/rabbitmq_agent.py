@@ -40,10 +40,21 @@ class RabbitMQAgent(RabbitMQBase):
         message = {"type": "commit", "commit_text": commit_text}
         self.publish_message(message)
 
-    def send_error(self, error_text):
-        message = {"type": "error", "error": error_text}
+    def send_error(self, error_text, task):
+        message = {"type": "error", "error": error_text, "task": task}
         logger.info("Send error: %s", message)
         self.publish_message(message)
+
+    def send_result(self, result_json):
+        result_dict = json.loads(result_json)
+        message = {
+            "type": "result",
+            "status": result_dict.get("status"),
+            "summary": result_dict.get("summary"),
+            "answer": result_dict.get("answer"),
+            "artifacts": result_dict.get("artifacts")
+        }
+        self.publish_message(message, "client")
 
     def send_ack(self):
         message = {"type": "ack"}

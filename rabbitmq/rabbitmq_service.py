@@ -31,7 +31,7 @@ class RabbitMQBase(ABC):
             )
         except pika.exceptions.AMQPError as e:
             logger.exception(e)
-        logger.info(f"Message published: {message.get('command')}")
+        logger.info(f"Message published: {message.get('type')}")
 
     def start_consuming(self):
         self.channel.basic_qos(prefetch_count=1)

@@ -17,12 +17,18 @@ if __name__ == "__main__":
         logger.info("Agent started")
         logger.info("Task: %s", task)
         try:
-            agent_logic()
+            result_json = agent_logic(
+                task or "",
+                error_text=error,
+                snapshot_text=snapshot,
+            )
+            logger.info("Agent result: %s", result_json[:500])
+            rabbitmq.send_result(result_json)
             rabbitmq.send_ack()
             sys.exit(0)
-        except Exception:
+        except Exception as exc:
             error_text = traceback.format_exc()
-            rabbitmq.send_error(error_text)
+            rabbitmq.send_error(error_text, task)
             logger.exception(error_text)
             sys.exit(0)
 

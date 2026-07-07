@@ -31,15 +31,15 @@ def error_handler(message: json):
         add_error(snapshot_id, error_text)
         update_snapshot_status(snapshot_id, "ERROR")
     stable_snapshot = get_snapshot_by_status("STABLE")
-    if not stable_snapshot:
-        raise ValueError("Database has not STABLE snapshot")
-    _, snapshot_sha, snapshot_text = stable_snapshot
-    subprocess.run(
-        ["git", "checkout", "-f", snapshot_sha],
-        cwd=AGENT_DIR, check=True, env=env,
-    )
-    start_agent()
-    return snapshot_sha, snapshot_text
+    if stable_snapshot:
+        _, snapshot_sha, snapshot_text = stable_snapshot
+        subprocess.run(
+            ["git", "checkout", "-f", snapshot_sha],
+            cwd=AGENT_DIR, check=True, env=env,
+        )
+        start_agent()
+        return snapshot_sha, snapshot_text
+    return None, None
 
 def commit_handler(message: json):
     commit_text = message.get("commit_text")

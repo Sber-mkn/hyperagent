@@ -1,0 +1,98 @@
+# Hyperagent — V3 agent + supervisor integration
+
+Self-improving coding agent (V3 ReAct loop, layered memory L0–L3) integrated with Docker, RabbitMQ, Postgres snapshots, and supervisor rollback.
+
+**Branch in this repo:** `integration/v3_supervisor` (V3 `agent/` + `local_supervisor` stack).
+
+## Quick start (local, no Docker)
+
+```bash
+cp agent/.env.example agent/.env
+# Edit agent/.env — set OPENROUTER_API_KEY
+
+pip install -r agent/requirements.txt
+python -m agent.run_demo "Create workdir/hello.py that prints hello and run it"
+```
+
+## Quick start (Docker — full stack)
+
+```bash
+cp agent/.env.example agent/.env
+# Edit OPENROUTER_API_KEY in agent/.env
+
+docker compose up --build -d
+docker exec -it hyperagent_client python -m client.main
+```
+
+Send a task at the prompt, e.g.:
+
+```
+Create /hyperagent/workdir/hello.py that prints hello, then run it with run_python
+```
+
+Wait for `--- Result ---` (15–30s). Files appear in `./workdir/` on the host.
+
+## Layout
+
+| Path | Role |
+|------|------|
+| `agent/` | V3 mutable agent (ReAct loop, memory, tools, LLM clients) |
+| `agent_immutable/` | Immutable entry — RabbitMQ, try/except, calls `agent_logic()` |
+| `supervisor/` | Git snapshots, rollback, container restart |
+| `client/` | CLI — sends tasks via RabbitMQ |
+| `constitution/` | Read-only L0 rules (mounted ro in Docker) |
+| `database/` | Postgres schema + CRUD for snapshots |
+| `rabbitmq/` | Exchange, queues, shared service |
+| `workdir/` | User task artifacts (hello.py, etc.) |
+| `docs/` | Integration guides + handoff for Devin |
+
+## Environment variables (`agent/.env`)
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `LLM_PROVIDER` | `openrouter` | `openrouter` or `ollama` |
+| `OPENROUTER_API_KEY` | — | **Required** for OpenRouter |
+| `AGENT_MODEL` | `qwen/qwen3-8b` | Main model |
+| `SUMMARIZER_MODEL` | same as agent | L2→L3 compression |
+| `V3_MAX_OUTPUT_TOKENS` | `512` | Cap per model call |
+| `V3_MAX_ITERATIONS` | `20` | ReAct loop limit |
+
+Docker also sets: `V3_DATA_DIR`, `AGENT_WORKDIR`, `AGENT_ROOT` (see `docker-compose.yml`).
+
+## Services (docker compose)
+
+| Service | Port | Notes |
+|---------|------|-------|
+| `rabbitmq` | 5672, 15672 (UI) | guest/guest |
+| `db` | 5432 | admin/12345, `hyperagent_db` |
+| `agent` | — | Restarts per task |
+| `supervisor` | — | Handles commit/ack/error |
+| `client` | — | Interactive stdin |
+
+## Verification checklist (Devin / CI)
+
+1. **Local:** `python -m agent.run_demo` → `tool_calls >= 2`, answer printed
+2. **Docker:** client task → `status: success`, file in `workdir/`
+3. **Import:** `from agent.main import agent_logic` inside agent container
+4. **Logs:** agent shows `--- step N ---` and `tool write_file:`
+
+## Docs
+
+- [`docs/HANDOFF_TO_DEVON.md`](docs/HANDOFF_TO_DEVON.md) — full history, V1–V5, bugs fixed
+- [`docs/INTEGRATION_STEPS.md`](docs/INTEGRATION_STEPS.md) — step-by-step integration
+- [`docs/INTEGRATION_SUPERVISOR.md`](docs/INTEGRATION_SUPERVISOR.md) — supervisor wiring
+- [`docs/INTEGRATION_LOGIC_AND_WHY.md`](docs/INTEGRATION_LOGIC_AND_WHY.md) — architecture reasoning
+
+## Phase status
+
+| Phase | Status |
+|-------|--------|
+| A — Docker + V3 agent + client result | Done |
+| B — Constitution L0, path guards | Partial |
+| C — Self-mod bridge (`commit_self_changes`) | Not done |
+
+## Requirements
+
+- Python 3.14 (Docker images)
+- OpenRouter API key (or Ollama for local-only)
+- Docker + Docker Compose for full stack
