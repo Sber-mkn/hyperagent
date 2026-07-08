@@ -1,4 +1,3 @@
-import json
 import os
 import pathlib
 import subprocess
@@ -23,7 +22,7 @@ env = os.environ.copy()
 env["GIT_DIR"] = str(GIT_DIR)
 env["GIT_WORK_TREE"] = str(AGENT_DIR)
 
-def error_handler(message: json):
+def error_handler(message: dict):
     error_text = message.get("error")
     snapshot = get_snapshot_by_status("PENDING")
     if snapshot:
@@ -31,17 +30,17 @@ def error_handler(message: json):
         add_error(snapshot_id, error_text)
         update_snapshot_status(snapshot_id, "ERROR")
     stable_snapshot = get_snapshot_by_status("STABLE")
-    if not stable_snapshot:
-        raise ValueError("Database has not STABLE snapshot")
-    _, snapshot_sha, snapshot_text = stable_snapshot
-    subprocess.run(
-        ["git", "checkout", "-f", snapshot_sha],
-        cwd=AGENT_DIR, check=True, env=env,
-    )
-    start_agent()
-    return snapshot_sha, snapshot_text
+    if stable_snapshot:
+        _, snapshot_sha, snapshot_text = stable_snapshot
+        subprocess.run(
+            ["git", "checkout", "-f", snapshot_sha],
+            cwd=AGENT_DIR, check=True, env=env,
+        )
+        start_agent()
+        return snapshot_sha, snapshot_text
+    return None, None
 
-def commit_handler(message: json):
+def commit_handler(message: dict):
     commit_text = message.get("commit_text")
     subprocess.run(
         ["git", "commit", "-m", commit_text],

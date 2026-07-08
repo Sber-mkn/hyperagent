@@ -35,8 +35,8 @@ class RabbitMQClient(RabbitMQBase):
 
             elif message_type == "result":
                 print(f"\nResult received")
-                print(f"Status: {message.get('status')}")
-                print(f"Result: {message.get('result')}")
+                print(f"answer: {message.get("answer")}")
+                print(f"result: {message.get("artifacts")}")
                 self.is_ready = False
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 

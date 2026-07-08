@@ -78,11 +78,13 @@ class RabbitMQSupervisor(RabbitMQBase):
             elif message_type == "error":
                 error_text = message.get("error")
                 snapshot_sha, snapshot_text = error_handler(message)
-                self.send_start_command(error_text, snapshot_text)
+                if snapshot_sha:
+                    self.send_start_command(error_text, snapshot_text)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 
             elif message_type == "ack":
                 ack_handler()
+                self.send_ready_message()
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 
             else:

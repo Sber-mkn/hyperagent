@@ -4,7 +4,6 @@ from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql.functions import current_timestamp
 
-
 class Base(DeclarativeBase):
     pass
 
@@ -15,7 +14,7 @@ class Snapshot(Base):
     sha: Mapped[str] = mapped_column(String(40))
     status: Mapped[str] = mapped_column(String(20))
     snapshot_time: Mapped[datetime] = mapped_column(
-        DateTime(timezone=False), server_default=current_timestamp()
+        DateTime(timezone=True), server_default=current_timestamp()
     )
     modification: Mapped[str] = mapped_column(Text)
     __table_args__ = (
@@ -31,6 +30,7 @@ class AgentError(Base):
     )
     error_text: Mapped[str] = mapped_column(Text)
     error_time: Mapped[datetime] = mapped_column(
-        DateTime(timezone=False), server_default=current_timestamp()
+        DateTime(timezone=True), server_default=current_timestamp()
     )
     snapshot: Mapped[Snapshot] = relationship()
+

@@ -5,8 +5,8 @@ create table snapshots
     status        varchar(20) not null,
     snapshot_time timestamp default current_timestamp,
     modification  text        not null
-        constraint check_status
-            check (status in ('PENDING', 'STABLE', 'ERROR'))
+    constraint check_status
+    check (status in ('PENDING', 'STABLE', 'ERROR'))
 );
 
 create table errors
@@ -20,3 +20,31 @@ create table errors
         on update cascade
         on delete cascade
 );
+
+create table llmchat
+(
+    id serial primary key,
+    done boolean not null default true,
+    done_reason text default null,
+    role varchar(10) not null,
+    thinking text not null default '',
+    content text not null default '',
+    tool_calls jsonb default null,
+    tool_call_id text default null,
+    name text default null,
+    provider text not null default '',
+    model text not null default '',
+    tokens_prompt int default null,
+    tokens_response int default null,
+    duration_load int default null,
+    duration_prompt int default null,
+    duration_response int default null,
+    dt timestamp default current_timestamp,
+    constraint check_role
+    check (role in ('assistant', 'system', 'user', 'tool'))
+);
+
+create user agent with password '12345';
+grant usage on schema public to agent;
+grant select, insert, update, delete on table llmchat to agent;
+grant usage, select on all sequences in schema public to agent;

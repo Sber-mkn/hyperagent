@@ -36,6 +36,16 @@ class RabbitMQAgent(RabbitMQBase):
             logger.exception(f"Error processing command: {e}")
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
+    def send_result(self, result_json):
+        message = {
+            "type": "result",
+            "status": result_json.get("status", ""),
+            "summary": result_json.get("summary", ""),
+            "answer": result_json.get("answer", ""),
+            "artifacts": result_json.get("artifacts", "")
+        }
+        self.publish_message(message, "client")
+
     def send_commit(self, commit_text):
         message = {"type": "commit", "commit_text": commit_text}
         self.publish_message(message)

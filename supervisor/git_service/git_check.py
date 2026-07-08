@@ -123,21 +123,36 @@ def git_check():
         ["git", "status", "--porcelain"],
         cwd=AGENT_DIR, capture_output=True, text=True, env=env
     )
+    if not status_result.stdout.strip():
+        logger.info("No changes to commit")
+        return 0
+    subprocess.run(
+        ["git", "add", "."],
+        cwd=AGENT_DIR, check=True, env=env
+    )
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=AGENT_DIR, capture_output=True, text=True, env=env
+    )
+    if not staged.stdout.strip():
+        return 0
 
-    if status_result.stdout.strip():
-        #############################
-        subprocess.run(
+    commit_result = subprocess.run(
         ["git", "commit", "-m", "Unknown"],
         cwd=AGENT_DIR, capture_output=True, text=True, env=env
-        )
-        sha_result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=AGENT_DIR, capture_output=True, text=True, env=env
-        )
-        sha = sha_result.stdout.strip()
-        add_snapshot(sha, "PENDING", "Unknown")
-        ##############################
-        logger.info(f"Created new commit, sha: {sha}")
-        return 1
-    return 0
+    )
+
+    if commit_result.returncode != 0:
+        logger.error(f"Commit failed: {commit_result.stderr}")
+        return 0
+
+    sha_result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=AGENT_DIR, capture_output=True, text=True, env=env
+    )
+    sha = sha_result.stdout.strip()
+
+    add_snapshot(sha, "PENDING", "Unknown")
+    logger.info(f"Created new commit, sha: {sha}")
+    return 1
 
