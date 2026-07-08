@@ -94,8 +94,6 @@ class LLMChat(UserList):
         super().__init__(messages)
 
 
-
-
     def to_payload(self) -> List[Message]:
         payload = []
         for m in self.data:
