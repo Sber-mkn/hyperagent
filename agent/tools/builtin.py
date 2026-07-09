@@ -12,28 +12,33 @@ import json
 MAX_LIMIT_CHARS = 20000  # потолок, выше которого limit не поднять ни одним инструментом — защита от совсем неадекватных запросов
 
 def _find_bash() -> str:
-    """На Windows голое имя 'bash' из PATH может резолвиться в WSL-заглушку
-    (...\\WindowsApps\\bash.exe), которая падает с ошибкой, если не настроен ни один
-    дистрибутив — даже если рядом стоит рабочий bash от Git for Windows. Ищем
-    настоящий исполняемый bash в обход этой заглушки."""
+    """На Windows голое имя 'bash' из PATH может резолвиться в лаунчер WSL
+    (...\\WindowsApps\\bash.exe ИЛИ ...\\System32\\bash.exe — оба запускают
+    `wsl bash`), даже если рядом стоит рабочий bash от Git for Windows. Это не
+    просто "падает с ошибкой": WSL — совсем другая ФС и другой python3, чем
+    тот, что использует run_python (sys.executable, обычный Windows-процесс).
+    Инструменты молча расходятся по разным окружениям: pip install в run_bash
+    ставит пакет в домашний каталог WSL, а run_python его не видит; пути вида
+    /home/user, которые бы имели смысл в git-bash (общая с Windows ФС через
+    /c/...), в WSL не существуют. Поэтому Git Bash ищем в первую очередь и
+    явно отбрасываем WSL-заглушки при поиске по PATH."""
     if platform.system() != "Windows":
         return "bash"
 
-    candidates = []
-    for p in os.environ.get("PATH", "").split(os.pathsep):
-        exe = os.path.join(p, "bash.exe")
-        if os.path.isfile(exe) and "WindowsApps" not in exe:
-            candidates.append(exe)
-
-    candidates += [
+    preferred = [
         r"C:\Program Files\Git\bin\bash.exe",
         r"C:\Program Files\Git\usr\bin\bash.exe",
         r"C:\Program Files (x86)\Git\bin\bash.exe",
         r"C:\Program Files (x86)\Git\usr\bin\bash.exe",
     ]
-
-    for exe in candidates:
+    for exe in preferred:
         if os.path.isfile(exe):
+            return exe
+
+    skip_markers = ("windowsapps", "system32", "syswow64", "sysnative")
+    for p in os.environ.get("PATH", "").split(os.pathsep):
+        exe = os.path.join(p, "bash.exe")
+        if os.path.isfile(exe) and not any(m in exe.lower() for m in skip_markers):
             return exe
 
     return "bash"  # ничего не нашли — пробуем как есть, пусть падает с понятной ошибкой
@@ -202,6 +207,17 @@ def change_file(path: str, old: str, new: str) -> str:
     return f"Заменено в {path}"
 
 
+def _bash_env() -> dict:
+    """PATH для run_bash с каталогом текущего интерпретатора (sys.executable) первым —
+    чтобы голые 'python'/'python3'/'pip' внутри run_bash резолвились в тот же Python,
+    что использует run_python, а не в первый попавшийся на машине. Без этого пакет,
+    поставленный через 'pip install' в run_bash, может быть не виден из run_python."""
+    env = os.environ.copy()
+    python_dir = os.path.dirname(sys.executable)
+    env["PATH"] = os.pathsep.join([python_dir, os.path.join(python_dir, "Scripts"), env.get("PATH", "")])
+    return env
+
+
 @tool
 def run_bash(command: str, timeout: int = 60, limit: int = 4000) -> str:
     """Выполнить команду bash и вернуть её вывод.
@@ -215,7 +231,7 @@ def run_bash(command: str, timeout: int = 60, limit: int = 4000) -> str:
     try:
         proc = subprocess.run(
             [_find_bash(), "-lc", command],
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True, text=True, timeout=timeout, env=_bash_env(),
         )
     except FileNotFoundError:
         return "[run_bash недоступен: не найден рабочий bash]"
@@ -336,7 +352,7 @@ def version_diff_hash(_hash: str) -> str:
     return on_command(json.dumps({
         "type": "git",
         "command": {
-            "command": "diff_hash",
+            "command": "diff",
             "hash": _hash
         }
     }))

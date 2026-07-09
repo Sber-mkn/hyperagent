@@ -15,7 +15,7 @@ from agent.llminterface.agent_graph.agent_state import AgentState
 from agent.tools import tools_spec, truncate_middle
 
 
-OLLAMA_URL = "http://100.93.59.55:11434/api/chat"
+OLLAMA_URL = "http://localhost:11434/api/chat"
 
 PLANNER_MODEL = "ornith:9b"
 NAMER_MODEL = "gemma4:e2b"
@@ -32,7 +32,10 @@ NUM_CTX_FINALIZER = 110000
 
 MAX_SUBTASK_STEPS = 10
 MAX_SUBTASK_REVISIONS = 2
-MAX_TOOL_RESULT_CHARS = 24000  # крайняя подстраховка для инструментов без своего limit (web_search и т.п.)
+MAX_TOOL_RESULT_CHARS = 24000
+
+SUBTASK_KEEP_ROUNDS = 3    # сколько последних раундов "вызов инструмента -> результат" хранить внутри подзадачи целиком
+SUBTASK_COMPACT_CHARS = 300  # до скольки символов сжимать содержимое/аргументы более старых раундов
 
 CONTROL_TOOL_NAMES = {"finish_subtask", "submit_plan"}
 
@@ -67,8 +70,8 @@ class ModelSpec:
 
 
 def add_models():
-    ModelSpec.add("gemma4:e2b", "thought", "low")
-    ModelSpec.add("ornith:9b", "thought", "high")
+    ModelSpec.add("ornith:9b", "thought", "low")
+    ModelSpec.add("ornith:35b", "thought", "high")
     ModelSpec.add("ornith:9b", "coding", "low")
     ModelSpec.add("ornith:35b", "coding", "high")
     ModelSpec.add("gemma4:12b", "translating", "high")
@@ -162,6 +165,50 @@ def _format_summaries(summaries: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _compact_subtask_chat(chat: LLMChat) -> LLMChat:
+    """Сжимает старые раунды 'вызов инструмента -> результат' внутри подзадачи.
+
+    Без этого каждый шаг исполнителя пересылает модели ВСЮ накопленную историю
+    подзадачи заново (см. tool_node — результаты только дописываются в chat), и
+    промпт-токены растут почти квадратично с числом шагов вплоть до MAX_SUBTASK_STEPS.
+    Системный промпт (0) и постановка подзадачи (1) не трогаем; последние
+    SUBTASK_KEEP_ROUNDS раундов оставляем как есть, более старые — сжимаем:
+    длинные аргументы вызовов и содержимое результатов инструментов урезаем
+    truncate_middle'ом. Раунд начинается с сообщения ассистента, вызывающего
+    инструмент(ы)."""
+    messages = list(chat.data)
+    round_starts = [i for i, m in enumerate(messages) if m.role == "assistant" and m.tool_calls]
+    if len(round_starts) <= SUBTASK_KEEP_ROUNDS:
+        return chat
+
+    keep_from = round_starts[-SUBTASK_KEEP_ROUNDS]
+    compacted: List[LLMMessage] = []
+    for i, m in enumerate(messages):
+        if i < 2 or i >= keep_from:
+            compacted.append(m)
+            continue
+        if m.role == "tool":
+            m = m.model_copy(update={"content": truncate_middle(m.content, SUBTASK_COMPACT_CHARS)})
+        elif m.role == "assistant" and m.tool_calls:
+            shrunk_calls = []
+            for c in m.tool_calls:
+                fn = dict(c.get("function", {}))
+                args = fn.get("arguments")
+                if isinstance(args, str) and len(args) > SUBTASK_COMPACT_CHARS:
+                    fn["arguments"] = truncate_middle(args, SUBTASK_COMPACT_CHARS)
+                elif isinstance(args, dict):
+                    fn["arguments"] = {
+                        k: (truncate_middle(v, SUBTASK_COMPACT_CHARS) if isinstance(v, str) else v)
+                        for k, v in args.items()
+                    }
+                shrunk = dict(c)
+                shrunk["function"] = fn
+                shrunk_calls.append(shrunk)
+            m = m.model_copy(update={"tool_calls": shrunk_calls})
+        compacted.append(m)
+    return LLMChat(compacted)
+
+
 def _subtask_system_prompt(d: Dict[str, Any]) -> str:
     plan = d["plan"]
     index = d["subtask_index"]
@@ -244,7 +291,8 @@ def create_agent(client: LLMClient) -> AgentGraph:
         )
         | ExecUpdate(
             chat=(
-                ExecSelect(
+                ExecUpdate(chat=(lambda d: _compact_subtask_chat(d["chat"])))
+                | ExecSelect(
                     chat="chat",
                     model="executor_model",
                     tools="executor_tools",
@@ -517,7 +565,11 @@ EXECUTOR_PROMPT = (
     "Если для подзадачи нужно вызвать несколько независимых инструментов (например, проверить два разных "
     "источника, или запросить данные по нескольким городам) — вызови их все одним сообщением, а не по очереди "
     "в отдельных ходах. Каждый лишний ход пересылает модели всю накопленную историю подзадачи заново, поэтому "
-    "меньше ходов — меньше потраченных токенов."
+    "меньше ходов — меньше потраченных токенов.\n\n"
+    "run_bash и run_python выполняются в реальной файловой системе Windows этой машины — не предполагай заранее "
+    "путей вроде /home/user или иной типичной Linux-структуры, их здесь нет. Если нужно сохранить файл (например, "
+    "Excel/CSV), сначала узнай текущую рабочую директорию (pwd в run_bash или os.getcwd() в run_python) и сохраняй "
+    "туда же относительным путём, либо явно укажи путь, который сам только что проверил."
 )
 
 NAMER_PROMPT = (
