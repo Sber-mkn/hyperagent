@@ -146,6 +146,17 @@ def _normalize_args(args: Any) -> Dict[str, Any]:
     return dict(args or {})
 
 
+def truncate_middle(text: str, max_chars: int) -> str:
+    """Обрезать текст до max_chars, сохраняя начало и конец (нужное часто оказывается либо в начале,
+    либо в хвосте — например, таблица данных после навигационного меню сайта)."""
+    if len(text) <= max_chars:
+        return text
+    head = max_chars // 2
+    tail = max_chars - head
+    cut = len(text) - head - tail
+    return f"{text[:head]}\n...[обрезано {cut} символов]...\n{text[-tail:]}"
+
+
 def execute_tool(call: Dict[str, Any]) -> tuple:
     fn = call.get("function", call)
     name = fn["name"]

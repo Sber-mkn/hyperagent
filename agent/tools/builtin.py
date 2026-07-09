@@ -1,12 +1,42 @@
 import os
+import platform
 import re
 import subprocess
 import sys
 
-from agent.tools.registry import tool
+from agent.tools.registry import tool, truncate_middle
 from agent.tools.registry import on_command
 
 import json
+
+MAX_LIMIT_CHARS = 20000  # потолок, выше которого limit не поднять ни одним инструментом — защита от совсем неадекватных запросов
+
+def _find_bash() -> str:
+    """На Windows голое имя 'bash' из PATH может резолвиться в WSL-заглушку
+    (...\\WindowsApps\\bash.exe), которая падает с ошибкой, если не настроен ни один
+    дистрибутив — даже если рядом стоит рабочий bash от Git for Windows. Ищем
+    настоящий исполняемый bash в обход этой заглушки."""
+    if platform.system() != "Windows":
+        return "bash"
+
+    candidates = []
+    for p in os.environ.get("PATH", "").split(os.pathsep):
+        exe = os.path.join(p, "bash.exe")
+        if os.path.isfile(exe) and "WindowsApps" not in exe:
+            candidates.append(exe)
+
+    candidates += [
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files\Git\usr\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\usr\bin\bash.exe",
+    ]
+
+    for exe in candidates:
+        if os.path.isfile(exe):
+            return exe
+
+    return "bash"  # ничего не нашли — пробуем как есть, пусть падает с понятной ошибкой
 
 
 
@@ -69,13 +99,16 @@ def fetch_url(url: str, limit: int = 4000) -> str:
 
     Args:
         url: адрес страницы.
-        limit: максимум символов текста в ответе.
+        limit: максимум символов текста в ответе. По умолчанию небольшой, чтобы не раздувать контекст —
+            если знаешь, что нужные данные не поместятся (большой JSON, длинная таблица и т.п.), смело
+            увеличивай значение (до 20000).
     """
     import requests
+    limit = min(limit, MAX_LIMIT_CHARS)
     r = requests.get(url, headers={"User-Agent": "agent/1.0"}, timeout=30)
     r.raise_for_status()
     text = _html_to_text(r.text)
-    return text[:limit] if text else "(на странице нет текстового содержимого — вероятно, JS-рендеринг; попробуй fetch_url_render)"
+    return truncate_middle(text, limit) if text else "(на странице нет текстового содержимого — вероятно, JS-рендеринг; попробуй fetch_url_render)"
 
 
 @tool
@@ -84,8 +117,9 @@ def fetch_url_render(url: str, limit: int = 4000) -> str:
 
     Args:
         url: адрес страницы.
-        limit: максимум символов в ответе.
+        limit: максимум символов в ответе (см. fetch_url — до 20000 при необходимости).
     """
+    limit = min(limit, MAX_LIMIT_CHARS)
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -96,7 +130,23 @@ def fetch_url_render(url: str, limit: int = 4000) -> str:
         page.goto(url)
         html = page.content()
         browser.close()
-    return _html_to_text(html)[:limit]
+    return truncate_middle(_html_to_text(html), limit)
+
+
+@tool
+def ask_user(question: str) -> str:
+    """Задать пользователю уточняющий вопрос и дождаться ответа.
+
+    Используй этот инструмент только тогда, когда нужную информацию действительно невозможно получить другими
+    инструментами (например, узнать личные предпочтения пользователя). Прежде чем спрашивать, попробуй сначала
+    определить ответ сам: например, местоположение пользователя можно узнать по IP через run_python/web_search,
+    не спрашивая об этом напрямую.
+
+    Args:
+        question: вопрос, который нужно задать пользователю.
+    """
+    print(f"\n[Вопрос пользователю] {question}")
+    return input("> ")
 
 
 @tool
@@ -153,38 +203,44 @@ def change_file(path: str, old: str, new: str) -> str:
 
 
 @tool
-def run_bash(command: str, timeout: int = 60) -> str:
+def run_bash(command: str, timeout: int = 60, limit: int = 4000) -> str:
     """Выполнить команду bash и вернуть её вывод.
 
     Args:
         command: команда для оболочки bash.
         timeout: таймаут в секундах.
+        limit: максимум символов вывода. По умолчанию небольшой — если ожидаешь длинный вывод,
+            который весь тебе нужен (например, большой JSON), увеличивай значение (до 20000).
     """
     try:
         proc = subprocess.run(
-            ["bash", "-lc", command],
+            [_find_bash(), "-lc", command],
             capture_output=True, text=True, timeout=timeout,
         )
     except FileNotFoundError:
-        return "[run_bash недоступен: нет bash в PATH]"
+        return "[run_bash недоступен: не найден рабочий bash]"
     out = (proc.stdout + proc.stderr).strip()
-    return out or f"(код возврата {proc.returncode})"
+    out = out or f"(код возврата {proc.returncode})"
+    return truncate_middle(out, min(limit, MAX_LIMIT_CHARS))
 
 
 @tool
-def run_python(code: str, timeout: int = 60) -> str:
+def run_python(code: str, timeout: int = 60, limit: int = 4000) -> str:
     """Выполнить Python-код и вернуть стандартный вывод.
 
     Args:
         code: исходный код на Python.
         timeout: таймаут в секундах.
+        limit: максимум символов вывода. По умолчанию небольшой — если ожидаешь длинный вывод,
+            который весь тебе нужен (например, большой JSON), увеличивай значение (до 20000).
     """
     proc = subprocess.run(
         [sys.executable, "-c", code],
         capture_output=True, text=True, timeout=timeout,
     )
     out = (proc.stdout + proc.stderr).strip()
-    return out or "(нет вывода)"
+    out = out or "(нет вывода)"
+    return truncate_middle(out, min(limit, MAX_LIMIT_CHARS))
 
 
 @tool

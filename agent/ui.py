@@ -34,12 +34,12 @@ len_line = 80
 
 def on_title(title: str):
     n = (len_line - len(title) - 2) / 2
-    print(f"{floor(n) * "-"} {title} {ceil(n) * "-"}")
+    print(f"{floor(n) * '-'} {title} {ceil(n) * '-'}")
 
 
 def on_tool(tool: str):
     rich.print(f"Вызван инструмент:\n{tool}")
-    result = execute_tool_from_json(tool)
+    name, result = execute_tool_from_json(tool)
     print(f"Результат:\n{result}")
     return result
 
