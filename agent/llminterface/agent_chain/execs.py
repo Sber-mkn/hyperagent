@@ -146,3 +146,23 @@ class ExecCall(Executable):
         if isinstance(self._target, Executable):
             return self._target.stream()
         return self._target()
+
+
+class ExecUpdate(Executable):
+    def __init__(self, **updates: Any):
+        self._updates = {k: Executable.to_executable(v) for k, v in updates.items()}
+
+    def _base(self, _input: Any) -> dict:
+        return _input.to_dict() if hasattr(_input, "to_dict") else dict(_input)
+
+    def run(self, _input: Any = MISSING):
+        result = self._base(_input)
+        for k, ex in self._updates.items():
+            result[k] = ex.run(_input)
+        return result
+
+    def stream(self, _input: Any = MISSING):
+        result = self._base(_input)
+        for k, ex in self._updates.items():
+            result[k] = ex.stream(_input)
+        return result

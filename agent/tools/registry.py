@@ -146,20 +146,31 @@ def _normalize_args(args: Any) -> Dict[str, Any]:
     return dict(args or {})
 
 
+def execute_tool(call: Dict[str, Any]) -> tuple:
+    fn = call.get("function", call)
+    name = fn["name"]
+    args = _normalize_args(fn.get("arguments"))
+    try:
+        return name, get_tool(name)(**args)
+    except Exception as e:
+        return name, f"[ошибка инструмента {name}: {e}]"
+
+
+def execute_tool_from_json(call: str) -> tuple:
+    fn = json.loads(call).get("command")
+    name = fn["name"]
+    args = _normalize_args(fn.get("arguments"))
+    try:
+        return name, get_tool(name)(**args)
+    except Exception as e:
+        return name, f"[ошибка инструмента {name}: {e}]"
+
+
 def run_tool_calls(calls: List[Dict[str, Any]]) -> List[tuple]:
     """Выполнить список tool-call'ов, вернуть [(name, result), ...].
     Несколько вызовов идут параллельно (потоки — инструменты I/O-bound)."""
-    def one(call: Dict[str, Any]) -> tuple:
-        fn = call.get("function", call)
-        name = fn["name"]
-        args = _normalize_args(fn.get("arguments"))
-        try:
-            return name, get_tool(name)(**args)
-        except Exception as e:                    # ошибка инструмента -> модель сможет исправиться
-            return name, f"[ошибка инструмента {name}: {e}]"
-
     calls = list(calls or [])
     if len(calls) <= 1:
-        return [one(c) for c in calls]
+        return [execute_tool(c) for c in calls]
     with ThreadPoolExecutor(max_workers=len(calls)) as pool:
-        return list(pool.map(one, calls))
+        return list(pool.map(execute_tool, calls))

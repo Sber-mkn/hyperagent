@@ -1,38 +1,53 @@
 from typing import Any, Dict
 
+import rich
+
 from agent.llminterface.client.llm_client import LLMClient
 from agent.llminterface.client.llm_chat import LLMChat, LLMMessage
 from agent.llminterface.agent_graph.agent_graph import AgentGraph, END
 from agent.llminterface.agent_chain.execs import *
 from agent.tools import tools_spec, run_tool_calls
-from agent.ui import print_section, render_summary, render_tool_call
+import json
 
 MAX_REVISIONS = 2
 
 
 def build_agent(client: LLMClient) -> AgentGraph:
 
-    def print_title(title: str):
-        print_section(title)
 
-    def print_details(chat: LLMChat, name):
-        render_summary(chat[-1], name)
-
-    def print_tool(name, args, result):
-        render_tool_call(name, args, result)
 
 
     chain_orchestrator = (
-        {
-            "chat": lambda d: LLMChat([{"role": "system", "content": d["orchestrator_prompt"]}]) + d["chat"],
-            "model": lambda d: d["orchestrator_model"],
-            "tools": lambda d: d["tools"],
-            "on_chunk_think": lambda d: d["on_think"],
-            "on_chunk_content": lambda d: d["on_content"]
-        }
-        | ExecEffect(ExecLambda(lambda d: f"Оркестратор ({d['model']})") | print_title)
-        | {"chat": ExecMultiargument(client)}
-        | ExecEffect(ExecLambda(lambda d: d["chat"]) | ExecPartial(print_details, name="Оркестратор"))
+        ExecEffect({
+            "model": lambda d: f"Оркестратор ({d["orchestrator_model"]})",
+            "on_start_message": lambda d: d["on_start_message"]
+            }
+            | ExecLambda(lambda d: d["on_start_message"](d["model"]))
+        )
+        | ExecUpdate(
+            chat=(
+                ExecUpdate(
+                    chat=(lambda d: LLMChat([{"role": "system", "content": d["orchestrator_prompt"]}]) + d["chat"])
+                )
+                | ExecSelect(
+                    chat="chat",
+                    model="orchestrator_model",
+                    tools="tools",
+                    on_chunk_think="on_think",
+                    on_chunk_content="on_content",
+                    num_ctx="num_ctx_orchestrator"
+                )
+                | ExecMultiargument(client)
+            )
+        )
+        | ExecEffect({
+                        "message": lambda d: d["chat"][-1],
+                        "model": lambda d: f"Оркестратор ({d["orchestrator_model"]})",
+                        "on_end_message": lambda d: d["on_end_message"]
+                     }
+                     | ExecEffect(lambda d: print(f"\n\n{d["model"]} --- ", end=""))
+                     | ExecLambda(lambda d: d["on_end_message"](d["message"]))
+        )
         | {"chat": lambda d: d["chat"], "answer_candidate": lambda d: d["chat"][-1].content}
     )
 
@@ -40,34 +55,62 @@ def build_agent(client: LLMClient) -> AgentGraph:
     def route_model(state) -> Any:
         return "toolNode" if state["chat"][-1].tool_calls else "reflection"
 
-    # toolNode
+
     def tool_node(state) -> Dict[str, Any]:
-        print_title("Инструменты")
         calls = state["chat"][-1].tool_calls or []
-        results = run_tool_calls(calls)
+
         chat = state["chat"]
-        for call, (name, result) in zip(calls, results):
-            args = call.get("function", call).get("arguments") or {}
-            print_tool(name, args, result)
-            chat = chat + LLMMessage.tool_result(name, result, tool_call_id=call.get("id"))
+
+        if state.get("on_tool"):
+            for call in calls:
+                name = call["function"]["name"]
+                result = state["on_tool"](json.dumps({
+                    "type": "client",
+                    "command": {
+                        "name": name,
+                        "arguments": call["function"]["arguments"]
+                    }
+                }))
+                chat = chat + LLMMessage.tool_result(name, result, call.get("id"))
+
         return {"chat": chat}
 
+
     chain_reflector = (
-            {
-                "chat": lambda d: d["chat"] + LLMChat([{"role": "system", "content": d["reflector_prompt"]}]),
-                "model": lambda d: d["reflector_model"],
-                "on_chunk_think": lambda d: d["on_think"],
-                "on_chunk_content": lambda d: d["on_content"],
-                "revisions": lambda d: d.get("revisions", 0)
+        ExecEffect({
+            "model": lambda d: f"Рефлектор ({d['reflector_model']})",
+            "on_start_message": lambda d: d["on_start_message"]
             }
-            | ExecEffect(ExecLambda(lambda d: f"Рефлектор ({d['model']})") | print_title)
-            | {"chat": ExecMultiargument(client), "revisions": lambda d: d["revisions"] + 1}
-            | ExecEffect(ExecLambda(lambda d: d["chat"]) | ExecPartial(print_details, name="Рефлектор"))
-            | {
-                "chat": lambda d: d["chat"],
-                "revisions": lambda d: d["revisions"],
-                "reflection": lambda d: d["chat"][-1].content,
-            }
+            | ExecLambda(lambda d: d["on_start_message"](d["model"]))
+        )
+        | ExecUpdate(
+            chat=(
+                ExecUpdate(
+                    chat=(lambda d: (d["chat"]) + LLMChat([{"role": "system", "content": d["reflector_prompt"]}]))
+                )
+                | ExecSelect(
+                    chat="chat",
+                    model="reflector_model",
+                    on_chunk_think="on_think",
+                    on_chunk_content="on_content",
+                    num_ctx="num_ctx_reflector"
+                )
+                | ExecMultiargument(client)
+            )
+        )
+        | ExecEffect({
+                        "message": lambda d: d["chat"][-1],
+                        "model": lambda d: f"Рефлектор ({d['reflector_model']})",
+                        "on_end_message": lambda d: d["on_end_message"]
+                     }
+                     | ExecEffect( lambda d: print(f"\n\n{d["model"]} --- ", end=""))
+                     | ExecLambda(lambda d: d["on_end_message"](d["message"]))
+        )
+        | {
+            "chat": lambda d: d["chat"],
+            "revisions": lambda d: d["revisions"] + 1,
+            "reflection": lambda d: d["chat"][-1].content,
+        }
     )
 
     def route_reflection(state) -> Any:
@@ -79,18 +122,41 @@ def build_agent(client: LLMClient) -> AgentGraph:
     # финал: в answer попадает именно ответ оркестратора, а не рефлектора
     def finalize_node(state) -> Dict[str, Any]:
         accepted = (state.get("reflection") or "").strip().lower().startswith("окей")
+
         return {"answer": state.get("answer_candidate"), "accepted": accepted}
 
 
     chain_namer = (
-            {
-                "chat": lambda d: d["chat"] + LLMChat([{"role": "system", "content": d["namer_prompt"]}]),
-                "model": lambda d: d["namer_model"]
+        ExecEffect({
+            "model": lambda d: f"Именователь ({d['namer_model']})",
+            "on_start_message": lambda d: d["on_start_message"]
             }
-            | ExecEffect(ExecLambda(lambda d: f"Именователь ({d['model']})") | print_title)
-            | {"chat": ExecMultiargument(client)}
-            | ExecEffect(ExecLambda(lambda d: d["chat"]) | ExecPartial(print_details, name="Именователь"))
-            | {"title": lambda d: d["chat"][-1].content}
+            | ExecLambda(lambda d: d["on_start_message"](d["model"]))
+        )
+        | ExecUpdate(
+            chat=(
+                ExecUpdate(
+                    chat=(lambda d: LLMChat([{"role": "system", "content": d["namer_prompt"]}]) + d["chat"])
+                )
+                | ExecSelect(
+                    chat="chat",
+                    model="namer_model",
+                    num_ctx="num_ctx_namer"
+                )
+                | ExecMultiargument(client)
+            )
+        )
+        | ExecEffect({
+                        "message": lambda d: d["chat"][-1],
+                        "model": lambda d: f"Именователь ({d['namer_model']})",
+                        "on_end_message": lambda d: d["on_end_message"]
+                     }
+                     | ExecEffect(lambda d: print(f"\n\n{d["model"]} --- ", end=""))
+                     | ExecLambda(lambda d: d["on_end_message"](d["message"]))
+        )
+        | ExecEffect(lambda d: d["on_title"](d["chat"][-1].content))
+        | {"title": lambda d: d["chat"][-1].content}
+
     )
 
     return (AgentGraph()
