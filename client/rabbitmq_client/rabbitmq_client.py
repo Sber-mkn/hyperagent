@@ -101,7 +101,7 @@ class RabbitMQClient(RabbitMQBase):
             self.ready_event.clear()
 
             try:
-                user_input = input("Enter your request: ").strip()
+                user_input = input("").strip()
                 user_input = user_input.encode("utf-8", errors="replace").decode("utf-8")
             except EOFError:
                 print("\nStdin closed, exiting")

@@ -2,7 +2,7 @@ import logging
 import sys
 import threading
 
-from client.rabbitmq.rabbitmq_client import RabbitMQClient
+from client.rabbitmq_client.rabbitmq_client import RabbitMQClient
 
 logger = logging.getLogger(__name__)
 

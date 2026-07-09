@@ -1,4 +1,4 @@
-from agent_immutable.rabbitmq import RabbitMQAgent
+from agent_immutable.rabbitmq_agent import RabbitMQAgent
 
 _rabbitmq: RabbitMQAgent | None = None
 

@@ -1,6 +1,5 @@
 import json
 import logging
-import threading
 import uuid
 from abc import ABC, abstractmethod
 
@@ -48,7 +47,7 @@ class RabbitMQBase(ABC):
 
         self.rpc_channel = self.connection.channel()
         self.reply_queue = self.rpc_channel.queue_declare(
-            queue="", exclusive=True, auto_delete=True
+            queue="", exclusive=True, auto_delete=False
         ).method.queue
 
     def request_response(self, message: dict, routing_key: str | None = None, timeout=60):

@@ -33,7 +33,7 @@ class RabbitMQAgent(RabbitMQBase):
             logger.info(f"Received message: {message.get('type')}")
             self.task = message.get("task")
             self.command = message.get("command", "")
-            self.error_text = message.get("error_text")
+            self.error_text = message.get("error_text", None)
             self.llm_chat = message.get("llm_chat", [])
             ch.basic_ack(delivery_tag=method.delivery_tag)
             ch.stop_consuming()

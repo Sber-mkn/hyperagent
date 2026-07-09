@@ -8,7 +8,7 @@ import tokenize
 from database.crud import add_snapshot
 from supervisor.git_service.git_types import GitError, GitResult
 
-GIT_DIR: pathlib.Path = pathlib.Path.home() / "hyperagent/supervisor/agent_git"
+GIT_DIR = pathlib.Path("/hyperagent/agent_git")
 GIT_WORK_TREE = pathlib.Path("/hyperagent/agent")
 GIT_BRANCH = "main"
 
@@ -46,7 +46,11 @@ class GitService:
 
     def _del_exists_repo_dir(self) -> None:
         if self.repo_dir.exists():
-            shutil.rmtree(self.repo_dir)
+            for item in self.repo_dir.iterdir():
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
 
     def _ensure_branch(self) -> None:
         if self.current_branch() != self.branch:
@@ -119,7 +123,7 @@ class GitService:
     def _init_commands(self) -> None:
         self.run_git_commands(
             [
-                ["init", "--bare", self.repo_dir],
+                ["init", str(self.repo_dir)],
                 ["config", "user.email", "agent@hyper.local"],
                 ["config", "user.name", "Hyper Agent"],
             ]
@@ -171,17 +175,27 @@ class GitService:
         return self.run_git_command(["add", "."]).stdout
 
     def commit(
-        self, message: str, paths: list[str] | None = None, allow_empty: bool = False
+            self, message: str, paths: list[str] | None = None, allow_empty: bool = False
     ) -> None:
         if paths:
             self.add_paths(paths)
+        else:
+            self.add()
+
+        status = self.status()
+        if not status.strip() and not allow_empty:
+            logger.info("No changes to commit, skipping")
+            return
 
         command_list = ["commit", "-m", message]
         if allow_empty:
             command_list.append("--allow-empty")
 
         self.run_git_command(command_list)
-        add_snapshot(self.current_revision(), "PENDING", message)
+
+        sha = self.current_revision()
+        if sha:
+            add_snapshot(sha, "PENDING", message)
 
     def current_branch(self) -> str:
         return self._current_branch_command().stdout.strip()
@@ -190,7 +204,7 @@ class GitService:
         return self.run_git_command(["branch", "--show-current"])
 
     def current_revision(self) -> str:
-        return self._current_revision_command().stdout
+        return self._current_revision_command().stdout.strip()
 
     def _current_revision_command(self) -> GitResult:
         return self.run_git_command(["rev-parse", "HEAD"])

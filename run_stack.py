@@ -28,7 +28,7 @@ AGENT_ROUTING_KEY = "agent"
 def compose_up() -> None:
     print(">>> Starting Docker stack (without client service) ...")
     subprocess.run(
-        ["docker", "compose", "up", "--build", "-d", "db", "rabbitmq", "supervisor", "agent"],
+        ["docker", "compose", "up", "--build", "-d", "db", "rabbitmq_agent", "supervisor", "agent"],
         check=True,
     )
 

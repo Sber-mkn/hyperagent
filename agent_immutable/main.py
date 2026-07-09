@@ -4,7 +4,7 @@ import traceback
 
 from agent.main import agent_logic
 from agent_immutable.on_functions import on_command, on_content, on_end_message, on_think
-from agent_immutable.rabbitmq import RabbitMQAgent
+from agent_immutable.rabbitmq_agent import RabbitMQAgent
 from agent_immutable.runtime import set_rabbitmq
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")

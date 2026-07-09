@@ -30,23 +30,23 @@
     {
       "user": "agent",
       "vhost": "/",
-      "configure": "",
-      "write": "agent_exchange",
-      "read": "agent_queue"
+      "configure": ".*",
+      "write": "^(agent_exchange|amq\\.default)$",
+      "read": "^(agent_queue|amq\\.gen-.*)$"
     },
     {
       "user": "supervisor",
       "vhost": "/",
-      "configure": "",
-      "write": "agent_exchange",
-      "read": "supervisor_queue"
+      "configure": ".*",
+      "write": "^(agent_exchange|amq\\.default)$",
+      "read": "^(supervisor_queue|amq\\.gen-.*)$"
     },
     {
       "user": "client",
       "vhost": "/",
-      "configure": "",
-      "write": "agent_exchange",
-      "read": "client_queue"
+      "configure": ".*",
+      "write": "^(agent_exchange|amq\\.default)$",
+      "read": "^(client_queue|amq\\.gen-.*)$"
     }
   ],
   "exchanges": [
