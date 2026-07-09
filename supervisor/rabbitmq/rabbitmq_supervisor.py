@@ -1,18 +1,10 @@
 import json
 import logging
 
-from contracts.git_commands import (
-    GitAddPathsCommand,
-    GitCommitCommand,
-    GitDiffCommand,
-    GitRollbackCommand,
-    GitStagedDiffCommand,
-    GitStatusCommand,
-)
-from contracts.requests import GitRequest
+from database.agent.crud import get_llmchat
 from rabbitmq.rabbitmq_service import RabbitMQBase
-from supervisor.git_service.git_service import GitService
 from supervisor.message_handler import ack_handler, error_handler, git_handler
+from supervisor.rollback import start_agent
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +19,7 @@ CLIENT_KEY = "client"
 class RabbitMQSupervisor(RabbitMQBase):
     def __init__(
         self,
-        git_service: GitService,
+        git_service,
         user=USER,
         password=PASSWORD,
         exchange=EXCHANGE,
@@ -38,14 +30,16 @@ class RabbitMQSupervisor(RabbitMQBase):
         self.git_service = git_service
         logger.info("RabbitMQ connection established")
 
-    def send_start_command(self, error_text=None, snapshot_text=None):
+    def send_start_command(self, task=None, error_text=None, llm_chat=None):
         message = {
             "command": "start",
         }
+        if task:
+            message["task"] = task
         if error_text:
             message["error_text"] = error_text
-        if snapshot_text:
-            message["snapshot_text"] = snapshot_text
+        if llm_chat is not None:
+            message["llm_chat"] = llm_chat
         self.publish_message(message)
 
     def send_ready_message(self):
@@ -59,24 +53,37 @@ class RabbitMQSupervisor(RabbitMQBase):
         try:
             message = json.loads(body.decode("utf-8"))
             message_type = message.get("type")
-            logger.info(f"Message consumed: {message_type}")
+            logger.info("Message consumed: %s", message_type)
+
             if message_type == "git":
-                git_handler(message, self.git_service)
-                ch.basic_ack(delivery_tag=method.delivery_tag)
+                result = git_handler(message, self.git_service)
+
+                if result.get("restart_agent"):
+                    start_agent()
+                    self.send_start_command(llm_chat=get_llmchat())
+                else:
+                    self.send_response(
+                        reply_to=properties.reply_to,
+                        correlation_id=properties.correlation_id,
+                        response=result,
+                    )
 
             elif message_type == "error":
-                error_text = message.get("error")
-                snapshot_text = error_handler(message)
-                self.send_start_command(error_text, snapshot_text)
-                ch.basic_ack(delivery_tag=method.delivery_tag)
+                error_text = error_handler(message, self.git_service)
+                self.send_start_command(
+                    task=message.get("task"),
+                    error_text=error_text,
+                    llm_chat=get_llmchat(),
+                )
 
             elif message_type == "ack":
-                ack_handler()
-                ch.basic_ack(delivery_tag=method.delivery_tag)
+                ack_handler(self.git_service)
+                self.send_ready_message()
 
             else:
                 logger.info(f"Unknown type: {message_type}")
-                ch.basic_ack(delivery_tag=method.delivery_tag)
+
+            ch.basic_ack(delivery_tag=method.delivery_tag)
 
         except Exception as e:
             logger.exception(f"Message error: {e}")

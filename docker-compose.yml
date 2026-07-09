@@ -5,7 +5,7 @@ services:
     restart: always
     environment:
       POSTGRES_DB: hyperagent_db
-      POSTGRES_USER: admin
+      POSTGRES_USER: supervisor
       POSTGRES_PASSWORD: 12345
     ports:
       - "5432:5432"
@@ -13,7 +13,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init-database:/docker-entrypoint-initdb.d
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U admin -d hyperagent_db" ]
+      test: [ "CMD-SHELL", "pg_isready -U supervisor -d hyperagent_db" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,15 +23,24 @@ services:
       dockerfile: agent_immutable/Dockerfile
     container_name: hyperagent_agent
     depends_on:
+      db:
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     restart: always
+    environment:
+      - V3_DATA_DIR=/hyperagent/agent/data
+      - AGENT_WORKDIR=/hyperagent/workdir
+      - AGENT_ROOT=/hyperagent/agent
+      - PYTHONUNBUFFERED=1
     volumes:
       - ./agent:/hyperagent/agent:rw
+      - ./workdir:/hyperagent/workdir:rw
       - ./logs:/hyperagent/logs:rw
       - ./rabbitmq:/hyperagent/rabbitmq:ro
       - ./constitution:/hyperagent/constitution:ro
       - ./agent_immutable:/hyperagent/agent_immutable:ro
+      - ./database/agent:/hyperagent/database/agent:ro
   supervisor:
     build:
       context: .
@@ -46,7 +55,7 @@ services:
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
       - POSTGRES_DB=hyperagent_db
-      - POSTGRES_USER=admin
+      - POSTGRES_USER=supervisor
       - POSTGRES_PASSWORD=12345
       - PYTHONUNBUFFERED=1
     volumes:
@@ -71,7 +80,6 @@ services:
       - ./rabbitmq:/hyperagent/rabbitmq
     stdin_open: true
     tty: true
-
   rabbitmq:
     image: rabbitmq:3-management
     container_name: hyperagent_rabbitmq

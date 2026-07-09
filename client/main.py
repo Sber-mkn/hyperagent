@@ -2,9 +2,9 @@ import logging
 import sys
 import threading
 
-logger = logging.getLogger(__name__)
-
 from client.rabbitmq.rabbitmq_client import RabbitMQClient
+
+logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     client = RabbitMQClient()

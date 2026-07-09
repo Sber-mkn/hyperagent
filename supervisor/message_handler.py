@@ -1,31 +1,25 @@
-import json
-import os
-import pathlib
-import subprocess
-
 from contracts.git_commands import (
-    GitAddPathsCommand,
     GitCommitCommand,
     GitDiffCommand,
     GitRollbackCommand,
-    GitStagedDiffCommand,
     GitStatusCommand,
 )
 from contracts.requests import GitRequest
-from database.crud import add_error, add_snapshot, get_snapshot_by_status, update_snapshot_status
-from supervisor.git_service.git_service import GitService
+from database.crud import add_error, get_snapshot_by_status, update_snapshot_status
+from supervisor.git_service import GitService
 from supervisor.rollback import start_agent
 
-AGENT_DIR = pathlib.Path("/hyperagent/agent")
-GIT_DIR = pathlib.Path("/hyperagent/agent_git")
 
-env = os.environ.copy()
-env["GIT_DIR"] = str(GIT_DIR)
-env["GIT_WORK_TREE"] = str(AGENT_DIR)
+def mark_pending_snapshot_stable() -> None:
+    snapshot = get_snapshot_by_status("PENDING")
+    if snapshot:
+        snapshot_id, _, _ = snapshot
+        update_snapshot_status(snapshot_id, "STABLE")
 
 
-def error_handler(message: json):
+def error_handler(message: dict, git_service: GitService):
     error_text = message.get("error")
+
     snapshot = get_snapshot_by_status("PENDING")
     if snapshot:
         snapshot_id, snapshot_sha, snapshot_message = snapshot
@@ -34,37 +28,39 @@ def error_handler(message: json):
     stable_snapshot = get_snapshot_by_status("STABLE")
     if not stable_snapshot:
         raise ValueError("Database has not STABLE snapshot")
-    _, snapshot_sha, snapshot_text = stable_snapshot
-    subprocess.run(
-        ["git", "checkout", "-f", snapshot_sha],
-        cwd=AGENT_DIR,
-        check=True,
-        env=env,
-    )
+    _, snapshot_sha, _ = stable_snapshot
+    git_service.rollback(snapshot_sha)
     start_agent()
-    return snapshot_sha, snapshot_text
+
+    return error_text
 
 
-def ack_handler():
-    snapshot = get_snapshot_by_status("PENDING")
-    if snapshot:
-        snapshot_id, _, _ = snapshot
-        update_snapshot_status(snapshot_id, "STABLE")
+def ack_handler(git_service: GitService):
+    mark_pending_snapshot_stable()
+
+    git_service.check()
 
 
-def git_handler(message: dict, git_service: GitService) -> None:
+def git_handler(message: dict, git_service: GitService) -> dict | None:
     request = GitRequest.model_validate(message)
     command = request.command
 
+    result = ""
+
     if isinstance(command, GitStatusCommand):
-        git_service.status()
+        result = git_service.status()
     elif isinstance(command, GitDiffCommand):
-        git_service.diff()
-    elif isinstance(command, GitStagedDiffCommand):
-        git_service.staged_diff()
-    elif isinstance(command, GitAddPathsCommand):
-        git_service.add_paths(command.paths)
+        result = git_service.diff(command.hash)
     elif isinstance(command, GitCommitCommand):
-        git_service.commit(command.message, paths=command.paths)
+        compile_error = git_service.compile_python_files()
+        if compile_error:
+            return {"ok": False, "error": compile_error}
+
+        mark_pending_snapshot_stable()
+        git_service.add()
+        git_service.commit(command.message)
+        return {"restart_agent": True}
     elif isinstance(command, GitRollbackCommand):
-        git_service.rollback(command.target_sha)
+        result = git_service.rollback(command.target_sha)
+
+    return {"ok": True, "stdout": result}

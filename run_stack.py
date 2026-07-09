@@ -2,13 +2,11 @@
 
 Usage:
     python run_stack.py                 # start containers, then type prompts interactively
-    python run_stack.py "your task"     # start containers, send one task, print the result
+    python run_stack.py "your task"     # start containers, send one task, print progress
 
-It starts all containers (docker compose up --build -d), waits for the
-supervisor's "ready" message, sends your prompt to the agent and streams
-the agent container logs until the result arrives.
-
-Requires: docker compose, and `pip install pika` on the host.
+It starts all containers, waits for the supervisor's "ready" message,
+sends your prompt to the agent, prints client queue progress messages,
+and streams agent container logs until the next "ready" or "result".
 """
 
 from __future__ import annotations
@@ -28,8 +26,11 @@ AGENT_ROUTING_KEY = "agent"
 
 
 def compose_up() -> None:
-    print(">>> Starting Docker stack (docker compose up --build -d) ...")
-    subprocess.run(["docker", "compose", "up", "--build", "-d"], check=True)
+    print(">>> Starting Docker stack (without client service) ...")
+    subprocess.run(
+        ["docker", "compose", "up", "--build", "-d", "db", "rabbitmq", "supervisor", "agent"],
+        check=True,
+    )
 
 
 def stream_agent_logs(stop: threading.Event) -> None:
@@ -40,6 +41,8 @@ def stream_agent_logs(stop: threading.Event) -> None:
         text=True,
     )
     try:
+        if proc.stdout is None:
+            return
         for line in proc.stdout:
             if stop.is_set():
                 break
@@ -60,12 +63,25 @@ def connect(retries: int = 30) -> pika.BlockingConnection:
     raise RuntimeError("unreachable")
 
 
+def print_client_message(message: dict) -> None:
+    message_type = message.get("type")
+    if message_type == "agent_message":
+        print(f"[agent_message:{message.get('message_type')}] {message.get('message')}")
+    elif message_type == "result":
+        print("\n================ RESULT ================")
+        print(f"Status   : {message.get('status')}")
+        print(f"Answer   : {message.get('answer')}")
+        print(f"Artifacts: {message.get('artifacts')}")
+        print("========================================\n")
+
+
 def wait_for_message(channel, wanted_types: set[str], timeout: int = 600) -> dict | None:
     deadline = time.time() + timeout
     while time.time() < deadline:
         method, _props, body = channel.basic_get(CLIENT_QUEUE, auto_ack=True)
         if body is not None:
             message = json.loads(body.decode("utf-8"))
+            print_client_message(message)
             if message.get("type") in wanted_types:
                 return message
         time.sleep(1)
@@ -79,7 +95,7 @@ def send_task(channel, task: str) -> None:
         body=json.dumps({"task": task, "command": "start"}, ensure_ascii=False),
         properties=pika.BasicProperties(delivery_mode=2, content_type="application/json"),
     )
-    print(">>> Task sent, waiting for result (watch the [agent] log lines) ...")
+    print(">>> Task sent, waiting for READY/result (watch the [agent] log lines) ...")
 
 
 def run_one_task(channel, task: str) -> None:
@@ -87,16 +103,13 @@ def run_one_task(channel, task: str) -> None:
     log_thread = threading.Thread(target=stream_agent_logs, args=(stop,), daemon=True)
     log_thread.start()
     send_task(channel, task)
-    result = wait_for_message(channel, {"result"})
+    result = wait_for_message(channel, {"ready", "result"})
     stop.set()
     if result is None:
-        print("!!! Timed out waiting for result — check `docker logs hyperagent_agent`.")
+        print("!!! Timed out waiting for READY/result. Check `docker logs hyperagent_agent`.")
         return
-    print("\n================ RESULT ================")
-    print(f"Status   : {result.get('status')}")
-    print(f"Answer   : {result.get('answer')}")
-    print(f"Artifacts: {result.get('artifacts')}")
-    print("========================================\n")
+    if result.get("type") == "ready":
+        print(">>> Hyperagent is READY\n")
 
 
 def main() -> None:
@@ -105,7 +118,7 @@ def main() -> None:
     channel = connection.channel()
     print(">>> Waiting for Hyperagent READY ...")
     if wait_for_message(channel, {"ready"}, timeout=120) is None:
-        print(">>> No ready message seen (maybe consumed earlier) — continuing anyway.")
+        print(">>> No ready message seen (maybe consumed earlier), continuing anyway.")
     print(">>> Hyperagent is READY\n")
 
     if len(sys.argv) > 1:
@@ -114,15 +127,12 @@ def main() -> None:
         while True:
             try:
                 task = input("Enter your request (or 'quit'): ").strip()
-            except EOFError:
-                break
-            except KeyboardInterrupt:
+            except EOFError, KeyboardInterrupt:
                 break
             if not task or task.lower() in {"quit", "exit"}:
                 break
             run_one_task(channel, task)
-            if wait_for_message(channel, {"ready"}, timeout=60):
-                print(">>> Hyperagent is READY\n")
+
     connection.close()
     print(">>> Done. Stack is still running (stop it with: docker compose down)")
 

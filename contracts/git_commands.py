@@ -9,8 +9,6 @@ PathType = Annotated[str, Field(min_length=1)]
 class GitCommandType(StrEnum):
     STATUS = "status"
     DIFF = "diff"
-    STAGED_DIFF = "staged_diff"
-    ADD_PATHS = "add_paths"
     COMMIT = "commit"
     ROLLBACK = "rollback"
 
@@ -25,21 +23,12 @@ class GitStatusCommand(BaseModel):
 
 class GitDiffCommand(BaseModel):
     command: Literal[GitCommandType.DIFF]
-
-
-class GitStagedDiffCommand(BaseModel):
-    command: Literal[GitCommandType.STAGED_DIFF]
-
-
-class GitAddPathsCommand(BaseModel):
-    command: Literal[GitCommandType.ADD_PATHS]
-    paths: list[PathType] = Field(min_length=1)
+    hash: str | None = Field(default=None, min_length=7, max_length=40, pattern=r"^[0-9a-fA-F]+$")
 
 
 class GitCommitCommand(BaseModel):
     command: Literal[GitCommandType.COMMIT]
     message: str = Field(min_length=1)
-    paths: list[PathType] = Field(default_factory=list)
 
 
 class GitRollbackCommand(BaseModel):
@@ -53,11 +42,6 @@ class GetCommitsCommand(BaseModel):
 
 
 GitCommand = Annotated[
-    GitStatusCommand
-    | GitDiffCommand
-    | GitStagedDiffCommand
-    | GitAddPathsCommand
-    | GitCommitCommand
-    | GitRollbackCommand,
+    GitStatusCommand | GitDiffCommand | GitCommitCommand | GitRollbackCommand,
     Field(discriminator="command"),
 ]

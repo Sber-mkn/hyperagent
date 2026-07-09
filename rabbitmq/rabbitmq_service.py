@@ -1,11 +1,17 @@
 import json
 import logging
+import threading
+import uuid
 from abc import ABC, abstractmethod
 
 import pika
 from pika.exceptions import AMQPError
 
 logger = logging.getLogger(__name__)
+
+
+class RequestResponseTimeoutError(TimeoutError):
+    pass
 
 
 class RabbitMQBase(ABC):
@@ -18,9 +24,12 @@ class RabbitMQBase(ABC):
         self.channel = self.connection.channel()
         logger.info("RabbitMQ connection established")
 
-    def publish_message(self, message: dict, routing_key=None):
+        self.rpc_channel = None
+        self.reply_queue = None
+
+    def publish_message(self, message: dict, routing_key: str | None = None):
         body = json.dumps(message, ensure_ascii=False)
-        if not routing_key:
+        if routing_key is None:
             routing_key = self.routing_key
         try:
             self.channel.basic_publish(
@@ -29,9 +38,66 @@ class RabbitMQBase(ABC):
                 body=body,
                 properties=pika.BasicProperties(delivery_mode=2, content_type="application/json"),
             )
-        except pika.exceptions.AMQPError as e:
+        except AMQPError as e:
             logger.exception(e)
-        logger.info(f"Message published: {message.get('command')}")
+        logger.info(f"Message published: {message.get('type')}")
+
+    def _ensure_reply_queue(self):
+        if self.reply_queue is not None:
+            return
+
+        self.rpc_channel = self.connection.channel()
+        self.reply_queue = self.rpc_channel.queue_declare(
+            queue="", exclusive=True, auto_delete=True
+        ).method.queue
+
+    def request_response(self, message: dict, routing_key: str | None = None, timeout=60):
+        self._ensure_reply_queue()
+
+        if routing_key is None:
+            routing_key = self.routing_key
+
+        body = json.dumps(message, ensure_ascii=False)
+        correlation_id = str(uuid.uuid4())
+
+        self.rpc_channel.basic_publish(
+            exchange=self.exchange,
+            routing_key=routing_key,
+            body=body,
+            properties=pika.BasicProperties(
+                content_type="application/json",
+                correlation_id=correlation_id,
+                reply_to=self.reply_queue,
+            ),
+        )
+
+        try:
+            for method, properties, body in self.rpc_channel.consume(
+                queue=self.reply_queue,
+                auto_ack=True,
+                inactivity_timeout=timeout,
+            ):
+                if method is None:
+                    raise RequestResponseTimeoutError("Request response timeout")
+
+                if properties.correlation_id != correlation_id:
+                    continue
+
+                return json.loads(body.decode("utf-8"))
+
+        finally:
+            self.rpc_channel.cancel()
+
+    def send_response(self, reply_to: str, correlation_id: str, response: dict) -> None:
+        self.channel.basic_publish(
+            exchange="",
+            routing_key=reply_to,
+            body=json.dumps(response, ensure_ascii=False),
+            properties=pika.BasicProperties(
+                content_type="application/json",
+                correlation_id=correlation_id,
+            ),
+        )
 
     def start_consuming(self):
         self.channel.basic_qos(prefetch_count=1)

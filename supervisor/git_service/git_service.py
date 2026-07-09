@@ -3,12 +3,10 @@ import os
 import pathlib
 import shutil
 import subprocess
+import tokenize
 
-from git_types import GitResult
-
-from contracts.requests import RequestType
 from database.crud import add_snapshot
-from supervisor.git_service.git_types import GitError
+from supervisor.git_service.git_types import GitError, GitResult
 
 GIT_DIR: pathlib.Path = pathlib.Path.home() / "hyperagent/supervisor/agent_git"
 GIT_WORK_TREE = pathlib.Path("/hyperagent/agent")
@@ -97,9 +95,12 @@ class GitService:
 
         return result
 
-    def run_git_commands(self, commands: list[list[str]], check: bool = True) -> None:
+    def run_git_commands(self, commands: list[list[str]], check: bool = True) -> list[str]:
+        result = []
         for command in commands:
-            self.run_git_command(command, check)
+            result.append(self.run_git_command(command, check))
+
+        return result
 
     def validate_relative_path(self, path: str) -> str:
         candidate = (self.git_work_tree / path).resolve()
@@ -136,19 +137,24 @@ class GitService:
     def create_branch(self) -> None:
         self.run_git_command(["switch", "-c", self.branch])
 
-    def rollback(self, target_sha: str) -> None:
-        self.run_git_commands(
+    def rollback(self, target_sha: str) -> list[str]:
+        result = self.run_git_commands(
             [
                 ["restore", "--source", target_sha, "--staged", "--worktree", "."],
                 ["clean", "-fd"],
             ]
         )
 
+        return result
+
     def status(self) -> str:
         return self.run_git_command(["status", "--porcelain"]).stdout
 
-    def diff(self) -> None:
-        self.run_git_command(["diff"])
+    def diff(self, _hash: str | None = None) -> str:
+        if _hash is not None:
+            return self.run_git_command(["show", "--format=", "--patch", _hash]).stdout
+
+        return self.run_git_command(["diff"]).stdout
 
     def staged_diff(self) -> None:
         self.run_git_command(["diff", "--cached"])
@@ -161,8 +167,8 @@ class GitService:
 
         self.run_git_command(["add", "--", *safe_paths])
 
-    def add(self) -> None:
-        self.run_git_command(["add", "."])
+    def add(self) -> str:
+        return self.run_git_command(["add", "."]).stdout
 
     def commit(
         self, message: str, paths: list[str] | None = None, allow_empty: bool = False
@@ -200,3 +206,24 @@ class GitService:
 
     def clean_untracked_files(self) -> None:
         self.run_git_command(["clean", "-fd"])
+
+    def compile_python_files(self) -> str | None:
+        for path in self.git_work_tree.rglob("*.py"):
+            if "__pycache__" in path.parts:
+                continue
+
+            relative_path = path.relative_to(self.git_work_tree).as_posix()
+            try:
+                with tokenize.open(path) as file:
+                    source = file.read()
+                compile(source, str(path), "exec")
+            except SyntaxError as exc:
+                location = f"{relative_path}:{exc.lineno or 0}:{exc.offset or 0}"
+                source_line = (exc.text or "").strip()
+                if source_line:
+                    return f"{location}: {exc.msg}\n{source_line}"
+                return f"{location}: {exc.msg}"
+            except Exception as exc:
+                return f"{relative_path}: {type(exc).__name__}: {exc}"
+
+        return None
