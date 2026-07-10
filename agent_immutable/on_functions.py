@@ -16,7 +16,7 @@ def on_command(command: dict) -> dict:
     elif command_type == "client_command":
         return rabbitmq.request_response(command, routing_key=CLIENT_ROUTING_KEY)
     else:
-        return {"ok": False, "error": f"Unknown command type: {command_type}"}
+        return {"error": f"Unknown command type: {command_type}"}
 
 
 def on_end_message(message: dict) -> None:
