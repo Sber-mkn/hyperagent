@@ -58,61 +58,61 @@ def _write_hello_file() -> pathlib.Path:
     return hello_file
 
 
-def agent_logic(
-    on_command,
-    on_content,
-    on_end_message,
-    on_think,
-    task: str = "",
-    error_text: str | None = None,
-    llm_chat: list[dict] | None = None,
-) -> str:
-    logger.info(
-        "simulation agent start task=%r error=%s llm_chat=%d",
-        task,
-        bool(error_text),
-        len(llm_chat or []),
-    )
-
-    on_think("Симуляция: получил задачу и начинаю проверять callbacks.")
-    on_content(f"Task: {task or '(empty)'}")
-
-    if error_text:
-        on_content(f"Получил error_text после rollback: {error_text[:500]}")
-        on_end_message(_end_message("Симуляция завершила recovery после ошибки."))
-        return SessionReport(
-            client_status="success",
-            client_answer="Recovered after simulated rollback.",
-            metrics={"mode": "recovery", "llm_chat_messages": len(llm_chat or [])},
-        ).to_json()
-
-    if llm_chat:
-        on_think("Симуляция: это запуск после self-mod commit, сейчас проверю error flow.")
-        on_end_message(_end_message("Симулирую падение после перезапуска агента."))
-        raise RuntimeError("Simulated agent failure after committed restart")
-
-    client_result = on_command({"type": "client_command", "command": "echo client-command-ok"})
-    on_content(f"client_command response: {client_result}")
-
-    status_before = on_command({"type": "git", "command": {"command": "status"}})
-    on_content(f"git status before change: {status_before}")
-
-    hello_file = _write_hello_file()
-    on_content(f"Создал файл: {hello_file.as_posix()}")
-
-    diff_result = on_command({"type": "git", "command": {"command": "diff"}})
-    on_content(f"git diff response: {diff_result}")
-
-    on_end_message(_end_message("Сейчас инициирую self-mod commit."))
-    commit_result = on_command(
-        {
-            "type": "git",
-            "command": {
-                "command": "commit",
-                "message": "Simulation: add hello file",
-            },
-        }
-    )
-    on_content(f"git commit response: {commit_result}")
-
-    raise RuntimeError("Simulated failure after commit command returned")
+# def agent_logic(
+#     on_command,
+#     on_content,
+#     on_end_message,
+#     on_think,
+#     task: str = "",
+#     error_text: str | None = None,
+#     llm_chat: list[dict] | None = None,
+# ) -> str:
+#     logger.info(
+#         "simulation agent start task=%r error=%s llm_chat=%d",
+#         task,
+#         bool(error_text),
+#         len(llm_chat or []),
+#     )
+#
+#     on_think("Симуляция: получил задачу и начинаю проверять callbacks.")
+#     on_content(f"Task: {task or '(empty)'}")
+#
+#     if error_text:
+#         on_content(f"Получил error_text после rollback: {error_text[:500]}")
+#         on_end_message(_end_message("Симуляция завершила recovery после ошибки."))
+#         return SessionReport(
+#             client_status="success",
+#             client_answer="Recovered after simulated rollback.",
+#             metrics={"mode": "recovery", "llm_chat_messages": len(llm_chat or [])},
+#         ).to_json()
+#
+#     if llm_chat:
+#         on_think("Симуляция: это запуск после self-mod commit, сейчас проверю error flow.")
+#         on_end_message(_end_message("Симулирую падение после перезапуска агента."))
+#         raise RuntimeError("Simulated agent failure after committed restart")
+#
+#     client_result = on_command({"type": "client_command", "command": "echo client-command-ok"})
+#     on_content(f"client_command response: {client_result}")
+#
+#     status_before = on_command({"type": "git", "command": {"command": "status"}})
+#     on_content(f"git status before change: {status_before}")
+#
+#     hello_file = _write_hello_file()
+#     on_content(f"Создал файл: {hello_file.as_posix()}")
+#
+#     diff_result = on_command({"type": "git", "command": {"command": "diff"}})
+#     on_content(f"git diff response: {diff_result}")
+#
+#     on_end_message(_end_message("Сейчас инициирую self-mod commit."))
+#     commit_result = on_command(
+#         {
+#             "type": "git",
+#             "command": {
+#                 "command": "commit",
+#                 "message": "Simulation: add hello file",
+#             },
+#         }
+#     )
+#     on_content(f"git commit response: {commit_result}")
+#
+#     raise RuntimeError("Simulated failure after commit command returned")

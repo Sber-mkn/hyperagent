@@ -1,11 +1,12 @@
 import json
 import logging
+import os
 import pathlib
-import subprocess
 import threading
 
 import pika
 
+from agent.tools import execute_tool
 from rabbitmq.rabbitmq_service import RabbitMQBase
 
 USER = "client"
@@ -31,6 +32,7 @@ class RabbitMQClient(RabbitMQBase):
         self.is_ready = False
         self.pending_message = None
         self.ready_event = threading.Event()
+        self._stream_kind = None  # "think"/"content"/None — для непрерывного вывода чанков
 
     def receive_message(self, ch, method, properties, body):
         try:
@@ -51,23 +53,22 @@ class RabbitMQClient(RabbitMQBase):
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 
             elif message_type == "agent_message":
-                print(f"{message.get('message')} ({message.get('message_type')})")
+                self._print_agent_message(message.get("message_type"), message.get("message"))
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 
             elif message_type == "client_command":
                 WORKDIR.mkdir(parents=True, exist_ok=True)
-                result = subprocess.run(
-                    message.get("command", ""),
-                    cwd=WORKDIR,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                )
+                prev_cwd = os.getcwd()
+                try:
+                    os.chdir(WORKDIR)
+                    _, result = execute_tool(message.get("command", {}))
+                finally:
+                    os.chdir(prev_cwd)
 
                 self.send_response(
                     properties.reply_to,
                     properties.correlation_id,
-                    {"stdout": result.stdout},
+                    {"result": str(result)},
                 )
 
                 ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -79,6 +80,25 @@ class RabbitMQClient(RabbitMQBase):
         except Exception as e:
             logger.exception("Error processing client message: %s", e)
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+
+    def _print_agent_message(self, kind: str, text: str) -> None:
+        """Печатает чанки think/content единым потоком вместо строки на каждый чанк."""
+        if kind in ("think", "content"):
+            if self._stream_kind != kind:
+                label = "Думает" if kind == "think" else "Ответ"
+                print(f"\n\n{label}: ", end="", flush=True)
+                self._stream_kind = kind
+            print(text, end="", flush=True)
+        else:
+            self._stream_kind = None
+            if kind == "title":
+                print(f"\n\n=== {text} ===")
+            elif kind == "start":
+                print(f"\n\n--- Начало ответа модели {text} ---")
+            elif kind == "tool_call":
+                print(f"\n\n[Инструмент] {text}")
+            else:
+                print(f"\n\n{text} ({kind})")
 
     def publish(self):
         if self.pending_message is not None:

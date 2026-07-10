@@ -23,12 +23,13 @@ class LLMTokens(BaseModel):
 
 
 class LLMDuration(BaseModel):
-    load: Optional[int]
-    prompt: Optional[int]
-    response: Optional[int]
+    """Длительности этапов в секундах (дробные)."""
+    load: Optional[float]
+    prompt: Optional[float]
+    response: Optional[float]
 
     @property
-    def total(self) -> Optional[int]:
+    def total(self) -> Optional[float]:
         return self.load + self.prompt + self.response
 
 

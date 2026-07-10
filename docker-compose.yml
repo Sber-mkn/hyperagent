@@ -32,6 +32,9 @@ services:
       - AGENT_WORKDIR=/hyperagent/workdir
       - AGENT_ROOT=/hyperagent/agent
       - PYTHONUNBUFFERED=1
+      - OLLAMA_URL=http://host.docker.internal:11434/api/chat
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./agent:/hyperagent/agent:rw
       - ./workdir:/hyperagent/workdir:rw
@@ -78,6 +81,8 @@ services:
     volumes:
       - ./client:/hyperagent/client
       - ./rabbitmq:/hyperagent/rabbitmq
+      - ./agent/tools:/hyperagent/agent/tools:ro
+      - ./workdir:/hyperagent/client/workdir:rw
     stdin_open: true
     tty: true
   rabbitmq:

@@ -90,6 +90,10 @@ def _parse_docstring(doc: Optional[str]) -> Tuple[str, Dict[str, str]]:
     return " ".join(x for x in summary if x).strip(), params
 
 
+TARGET_PARAM = "target"
+DEFAULT_TARGET = "server"
+
+
 def _build_schema(func: Callable[..., Any], param_docs: Dict[str, str]) -> Dict[str, Any]:
     props: Dict[str, Any] = {}
     required: List[str] = []
@@ -100,6 +104,14 @@ def _build_schema(func: Callable[..., Any], param_docs: Dict[str, str]) -> Dict[
         props[pname] = prop
         if p.default is inspect.Parameter.empty:
             required.append(pname)
+    props[TARGET_PARAM] = {
+        "type": "string",
+        "enum": ["server", "client"],
+        "description": (
+            "Где выполнить инструмент: 'server' — в контейнере агента (по умолчанию), "
+            "'client' — на машине пользователя, запустившей клиент."
+        ),
+    }
     return {"type": "object", "properties": props, "required": required}
 
 
@@ -157,10 +169,18 @@ def truncate_middle(text: str, max_chars: int) -> str:
     return f"{text[:head]}\n...[обрезано {cut} символов]...\n{text[-tail:]}"
 
 
+def tool_target(call: Dict[str, Any]) -> str:
+    """Куда модель просит выполнить вызов: 'server' (по умолчанию) или 'client'."""
+    fn = call.get("function", call)
+    args = _normalize_args(fn.get("arguments"))
+    return args.get(TARGET_PARAM) or DEFAULT_TARGET
+
+
 def execute_tool(call: Dict[str, Any]) -> tuple:
     fn = call.get("function", call)
     name = fn["name"]
     args = _normalize_args(fn.get("arguments"))
+    args.pop(TARGET_PARAM, None)
     try:
         return name, get_tool(name)(**args)
     except Exception as e:
@@ -171,6 +191,7 @@ def execute_tool_from_json(call: str) -> tuple:
     fn = json.loads(call).get("command")
     name = fn["name"]
     args = _normalize_args(fn.get("arguments"))
+    args.pop(TARGET_PARAM, None)
     try:
         return name, get_tool(name)(**args)
     except Exception as e:

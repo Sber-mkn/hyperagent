@@ -2,8 +2,16 @@ import logging
 import sys
 import traceback
 
-from agent.main import agent_logic
-from agent_immutable.on_functions import on_command, on_content, on_end_message, on_think
+from agent.v5_agent import agent_logic
+from agent_immutable.on_functions import (
+    on_command,
+    on_content,
+    on_end_message,
+    on_start_message,
+    on_think,
+    on_title,
+    on_tool_call,
+)
 from agent_immutable.rabbitmq_agent import RabbitMQAgent
 from agent_immutable.runtime import set_rabbitmq
 
@@ -24,13 +32,15 @@ if __name__ == "__main__":
         logger.info("Task: %s", task)
         try:
             agent_logic(
-                task=task or "",
+                user_message=task,
                 error_text=error,
-                llm_chat=llm_chat,
                 on_think=on_think,
                 on_content=on_content,
+                on_title=on_title,
+                on_tool=on_command,
+                on_tool_call=on_tool_call,
                 on_end_message=on_end_message,
-                on_command=on_command,
+                on_start_message=on_start_message,
             )
             rabbitmq.send_ack()
 

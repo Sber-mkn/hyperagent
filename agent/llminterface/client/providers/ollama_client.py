@@ -54,6 +54,12 @@ class OllamaClient(LLMClient):
         self.default_ollama_options, self.default_model_options = self._split_params(parameters)
 
 
+    @staticmethod
+    def _ns_to_s(value: Optional[int]) -> Optional[float]:
+        """Ollama отдаёт длительности в наносекундах — переводим в секунды,
+        чтобы значения помещались в БД (см. duration_* колонки в llmchat)."""
+        return value / 1e9 if value is not None else None
+
     def _parse_response(self, response: Dict[str, Any]) -> LLMMessage:
         message = response.get("message", {})
 
@@ -71,9 +77,9 @@ class OllamaClient(LLMClient):
                 response=response.get("eval_count"),
             ),
             duration=LLMDuration(
-                load=response.get("load_duration"),
-                prompt=response.get("prompt_eval_duration"),
-                response=response.get("eval_duration"),
+                load=self._ns_to_s(response.get("load_duration")),
+                prompt=self._ns_to_s(response.get("prompt_eval_duration")),
+                response=self._ns_to_s(response.get("eval_duration")),
             ),
             dt=datetime.now(),
         )

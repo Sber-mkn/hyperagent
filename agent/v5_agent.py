@@ -1,6 +1,7 @@
 from typing import Optional, Callable, Any, Dict, List, Literal, Iterable
 
 import json
+import os
 import threading
 import time
 
@@ -12,10 +13,10 @@ from agent.llminterface.agent_chain.execs import *
 from agent.llminterface.agent_graph.agent_graph import AgentGraph, END
 from agent.llminterface.agent_graph.agent_state import AgentState
 
-from agent.tools import tools_spec, truncate_middle
+from agent.tools import tools_spec, truncate_middle, execute_tool, tool_target
 
 
-OLLAMA_URL = "http://localhost:11434/api/chat"
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/chat")
 
 PLANNER_MODEL = "ornith:9b"
 NAMER_MODEL = "gemma4:e2b"
@@ -33,6 +34,7 @@ NUM_CTX_FINALIZER = 110000
 MAX_SUBTASK_STEPS = 10
 MAX_SUBTASK_REVISIONS = 2
 MAX_TOOL_RESULT_CHARS = 24000
+TOOL_LOG_RESULT_CHARS = 300  # превью результата для пользователя (не для модели)
 
 SUBTASK_KEEP_ROUNDS = 3    # сколько последних раундов "вызов инструмента -> результат" хранить внутри подзадачи целиком
 SUBTASK_COMPACT_CHARS = 300  # до скольки символов сжимать содержимое/аргументы более старых раундов
@@ -318,20 +320,38 @@ def create_agent(client: LLMClient) -> AgentGraph:
         calls = state["chat"][-1].tool_calls or []
         chat = state["chat"]
 
-        if state.get("on_tool"):
-            for call in calls:
-                name = call["function"]["name"]
-                if name in CONTROL_TOOL_NAMES:
-                    continue
-                result = state["on_tool"](json.dumps({
-                    "type": "client",
-                    "command": {
-                        "name": name,
-                        "arguments": call["function"]["arguments"]
-                    }
-                }))
-                result = truncate_middle(str(result), MAX_TOOL_RESULT_CHARS)
-                chat = chat + LLMMessage.tool_result(name, result, call.get("id"))
+        for call in calls:
+            name = call["function"]["name"]
+            if name in CONTROL_TOOL_NAMES:
+                continue
+
+            if tool_target(call) == "client":
+                on_tool = state.get("on_tool")
+                if on_tool:
+                    response = on_tool({
+                        "type": "client_command",
+                        "command": {
+                            "name": name,
+                            "arguments": call["function"]["arguments"],
+                        },
+                    })
+                    result = response.get("result") if isinstance(response, dict) else response
+                else:
+                    result = f"[инструмент {name}: нет транспорта до клиента]"
+            else:
+                _, result = execute_tool(call)
+
+            on_tool_call = state.get("on_tool_call")
+            if on_tool_call:
+                on_tool_call(
+                    name,
+                    call["function"]["arguments"],
+                    tool_target(call),
+                    truncate_middle(str(result), TOOL_LOG_RESULT_CHARS),
+                )
+
+            result = truncate_middle(str(result), MAX_TOOL_RESULT_CHARS)
+            chat = chat + LLMMessage.tool_result(name, result, call.get("id"))
 
         return {"chat": chat}
 
@@ -504,8 +524,8 @@ def create_agent(client: LLMClient) -> AgentGraph:
             .add_node("summarizer", chain_summarizer)
             .add_node("finalize", chain_finalize)
             .set_entry("start")
-            .add_edge("start", "planner", "namer")
-            .add_edge("namer", END)
+            .add_edge("start", "namer")
+            .add_edge("namer", "planner")
             .add_edge("planner", "dispatch")
             .add_edge("dispatch", "executor")
             .add_conditional_edge("executor", route_executor)
@@ -622,9 +642,9 @@ class _RunStats:
         self._lock = threading.Lock()
         self.prompt_tokens = 0
         self.response_tokens = 0
-        self.load_duration = 0      # наносекунды
-        self.prompt_duration = 0    # наносекунды, "рефил"
-        self.response_duration = 0  # наносекунды, генерация
+        self.load_duration = 0      # секунды
+        self.prompt_duration = 0    # секунды, "рефил"
+        self.response_duration = 0  # секунды, генерация
 
     def add(self, message: LLMMessage):
         with self._lock:
@@ -655,6 +675,7 @@ def agent_logic(
         on_content: Optional[Callable[[str], Any]] = None,
         on_title: Optional[Callable[[str], Any]] = None,
         on_tool: Optional[Callable[[Dict[str, Any]], Any]] = None,
+        on_tool_call: Optional[Callable[[str, Any, str, str], Any]] = None,
         on_end_message: Optional[Callable[[Dict[str, Any]], Any]] = None,
         on_start_message: Optional[Callable[[Dict[str, Any]], Any]] = None
 ):
@@ -686,6 +707,7 @@ def agent_logic(
         "on_content": on_content,
         "on_title": on_title,
         "on_tool": on_tool,
+        "on_tool_call": on_tool_call,
         "on_end_message": on_end_message,
         "on_start_message": on_start_message,
 
@@ -703,10 +725,10 @@ def agent_logic(
     total_duration = stats.load_duration + stats.prompt_duration + stats.response_duration
     print(
         f"\n\nОбщее время работы агента: {elapsed:.2f} с\n"
-        f"Время по стадиям (сумма по всем вызовам моделей, из них {total_duration / 1e9:.2f} с):\n"
-        f"\tЗагрузка: {stats.load_duration / 1e9:.2f} с\n"
-        f"\tРефил: {stats.prompt_duration / 1e9:.2f} с\n"
-        f"\tГенерация: {stats.response_duration / 1e9:.2f} с\n"
+        f"Время по стадиям (сумма по всем вызовам моделей, из них {total_duration:.2f} с):\n"
+        f"\tЗагрузка: {stats.load_duration:.2f} с\n"
+        f"\tРефил: {stats.prompt_duration:.2f} с\n"
+        f"\tГенерация: {stats.response_duration:.2f} с\n"
         f"Токены: промпт={stats.prompt_tokens}, генерация={stats.response_tokens}, всего={total_tokens}"
     )
 
