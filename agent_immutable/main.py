@@ -2,7 +2,7 @@ import logging
 import sys
 import traceback
 
-from agent.v5_agent import agent_logic
+from agent.main import agent_logic
 from agent_immutable.on_functions import (
     on_command,
     on_content,

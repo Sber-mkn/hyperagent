@@ -28,7 +28,7 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
-      - V3_DATA_DIR=/hyperagent/agent/data
+      - V3_DATA_DIR=/hyperagent/logs/agent_data
       - AGENT_WORKDIR=/hyperagent/workdir
       - AGENT_ROOT=/hyperagent/agent
       - PYTHONUNBUFFERED=1

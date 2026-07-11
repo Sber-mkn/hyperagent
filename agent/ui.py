@@ -1,57 +1,64 @@
-from math import floor, ceil
+"""Terminal callbacks for running agent.main directly."""
+
+from __future__ import annotations
+
+import json
+from typing import Any
 
 from agent.llminterface.client.llm_chat import LLMMessage
 from agent.tools.registry import execute_tool_from_json
 
-import rich
-import json
-
 
 def on_think_and_content():
-    think, content = False, False
+    showing_thought, showing_content = False, False
 
-    def on_think(chunk: str):
-        nonlocal think, content
-        if not think:
+    def on_think(chunk: str) -> None:
+        nonlocal showing_thought, showing_content
+        if not showing_thought:
             print("\nThinking: ", end="", flush=True)
-            think = True
-            content = False
+            showing_thought, showing_content = True, False
         print(chunk, end="", flush=True)
 
-    def on_content(chunk: str):
-        nonlocal think, content
-        if not content:
-            if think:
+    def on_content(chunk: str) -> None:
+        nonlocal showing_thought, showing_content
+        if not showing_content:
+            if showing_thought:
                 print(flush=True)
             print("\nContent: ", end="", flush=True)
-            content = True
-            think = False
+            showing_content, showing_thought = True, False
         print(chunk, end="", flush=True)
 
     return on_think, on_content
 
-len_line = 80
 
-def on_title(title: str):
-    n = (len_line - len(title) - 2) / 2
-    print(f"{floor(n) * '-'} {title} {ceil(n) * '-'}")
+def on_title(title: str) -> None:
+    print(f"\n--- {title} ---")
 
 
-def on_tool(tool: str):
-    rich.print(f"Вызван инструмент:\n{tool}")
-    name, result = execute_tool_from_json(tool)
-    print(f"Результат:\n{result}")
+def on_tool(payload: dict[str, Any]) -> Any:
+    name, result = execute_tool_from_json(json.dumps(payload, ensure_ascii=False))
+    print(f"\nClient tool {name}: {result}")
     return result
 
-def on_end_message(message: LLMMessage):
-    print(f"Сообщение закончилось, сводка:"
-          f"\n\tТокены:"
-          f"\n\t\tПромпт: {message.tokens.prompt}"
-          f"\n\t\tГенерация: {message.tokens.response}"
-          f"\n\tВремя:"
-          f"\n\t\tЗагрузка: {message.duration.load}"
-          f"\n\t\tРефил: {message.duration.prompt}"
-          f"\n\t\tГенерация: {message.duration.response}")
 
-def on_start_message(model: str):
-    print(f"\nНачалось сообщение от модели {model}")
+def on_tool_call(name: str, arguments: Any, target: str, result_preview: str) -> None:
+    print(f"\nTool {name} [{target}] {arguments} -> {result_preview}")
+
+
+def on_end_message(message: LLMMessage) -> None:
+    print("\nMessage finished")
+    if message.tokens:
+        print(
+            f"Tokens: prompt={message.tokens.prompt}, "
+            f"response={message.tokens.response}"
+        )
+    if message.duration:
+        print(
+            f"Time: load={message.duration.load}, "
+            f"prompt={message.duration.prompt}, "
+            f"response={message.duration.response}"
+        )
+
+
+def on_start_message(model: str) -> None:
+    print(f"\nModel started: {model}")
