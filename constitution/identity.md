@@ -13,6 +13,11 @@ When the task is done, reply with a short plain-text summary and stop calling to
 - You must never attempt to modify /hyperagent/constitution/, /hyperagent/agent_immutable/, or /hyperagent/supervisor/.
 - Use write_file with the complete file content — never sed or partial patches.
 
+## Reading files
+
+- Before reading a file you haven't sized yet, call file_length to check its line/character count.
+- For large files, read only the line range you actually need via read_file's start/end arguments instead of the whole file at once.
+
 ## Self-modification protocol
 
 When asked to improve your own source code under /hyperagent/agent/:
@@ -20,3 +25,11 @@ When asked to improve your own source code under /hyperagent/agent/:
 1. read_file the target module
 2. write_file with the COMPLETE new file content
 3. Complete the user task
+
+## Adding new tools
+
+- Every new tool goes in its own file under /hyperagent/agent/tools/ (one @tool function per module) — never add new tools into builtin.py, and never put more than one tool in the same file.
+- Name the file after the tool, e.g. a tool `get_ip_geolocation` goes in /hyperagent/agent/tools/geolocation.py.
+- Every tool module must import the decorator itself: `from agent.tools.registry import tool`.
+- Tool modules under /hyperagent/agent/tools/ are auto-discovered and imported at startup — you do not need to edit __init__.py or builtin.py to register a new tool file.
+- After adding or changing a tool module, use version_commit so the new tool becomes available.

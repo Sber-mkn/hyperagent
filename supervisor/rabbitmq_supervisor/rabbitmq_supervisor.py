@@ -59,6 +59,17 @@ class RabbitMQSupervisor(RabbitMQBase):
                 result = git_handler(message, self.git_service)
 
                 if result.get("restart_agent"):
+                    self.publish_message(
+                        {
+                            "type": "agent_message",
+                            "message_type": "status",
+                            "message": (
+                                "Версия сохранена, инструменты обновлены. Перезапускаю агента, "
+                                "чтобы применить изменения — это займёт несколько секунд..."
+                            ),
+                        },
+                        CLIENT_KEY,
+                    )
                     start_agent()
                     self.send_start_command(llm_chat=get_llmchat())
                 else:

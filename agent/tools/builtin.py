@@ -5,9 +5,7 @@ import subprocess
 import sys
 
 from agent.tools.registry import tool, truncate_middle
-from agent.tools.registry import on_command
-
-import json
+from agent.tools import registry
 
 MAX_LIMIT_CHARS = 20000  # потолок, выше которого limit не поднять ни одним инструментом — защита от совсем неадекватных запросов
 
@@ -138,7 +136,7 @@ def fetch_url_render(url: str, limit: int = 4000) -> str:
     return truncate_middle(_html_to_text(html), limit)
 
 
-@tool
+@tool(default_target="client")
 def ask_user(question: str) -> str:
     """Задать пользователю уточняющий вопрос и дождаться ответа.
 
@@ -166,14 +164,33 @@ def list_files(path: str = ".") -> str:
 
 
 @tool
-def read_file(path: str) -> str:
-    """Прочитать текстовый файл целиком.
+def read_file(path: str, start: int = 1, end: int = 0) -> str:
+    """Прочитать текстовый файл целиком или диапазон строк. Для больших файлов сначала вызови
+    file_length, затем читай нужный диапазон строк по частям, а не весь файл сразу.
+
+    Args:
+        path: путь к файлу.
+        start: номер первой строки для чтения (нумерация с 1, по умолчанию с начала файла).
+        end: номер последней строки для чтения включительно (по умолчанию 0 — до конца файла).
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+    end_idx = end if end > 0 else len(lines)
+    return "".join(lines[max(start - 1, 0):end_idx])
+
+
+@tool
+def file_length(path: str) -> str:
+    """Узнать количество строк и символов в файле — используй перед read_file, чтобы выбрать
+    диапазон строк для чтения большого файла по частям.
 
     Args:
         path: путь к файлу.
     """
     with open(path, "r", encoding="utf-8") as f:
-        return f.read()
+        content = f.read()
+    lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+    return f"{lines} строк, {len(content)} символов"
 
 
 @tool
@@ -272,13 +289,13 @@ def version_commit(message: str):
     Args:
         message: сообщение, которое описывает изменения в версии.
     """
-    return on_command(json.dumps({
+    return registry.on_command({
         "type": "git",
         "command": {
             "command": "commit",
             "message": message
         }
-    }))
+    })
 
 @tool
 def version_status() -> str:
@@ -293,12 +310,12 @@ def version_status() -> str:
     - D — удален, но удаление не добавлено в индекс.
     - ?? — неотслеживаемый (новый) файл.
     """
-    return on_command(json.dumps({
+    return registry.on_command({
         "type": "git",
         "command": {
             "command": "status"
         }
-    }))
+    })
 
 
 @tool
@@ -315,12 +332,12 @@ def version_diff():
         Левая часть (-84,7): относится к исходному файлу. Показывает, что фрагмент начинается со строки номер 84 и включает в себя 7 строк.
         Правая часть (+84,5): относится к новому файлу. Показывает, что этот фрагмент начинается со строки 84 и охватывает уже 5 строк.
     """
-    return on_command(json.dumps({
+    return registry.on_command({
         "type": "git",
         "command": {
             "command": "diff"
         }
-    }))
+    })
 
 
 @tool
@@ -349,13 +366,13 @@ def version_diff_hash(_hash: str) -> str:
     Args:
         _hash: хэш версии сервера (агента), с которой нужно сравнить текущую версию.
     """
-    return on_command(json.dumps({
+    return registry.on_command({
         "type": "git",
         "command": {
             "command": "diff",
             "hash": _hash
         }
-    }))
+    })
 
 
 @tool
@@ -363,16 +380,16 @@ def version_log() -> str:
     """Возвращает список версий агента в формате "<хэш версии> <описание изменений>". Все версии которые выводятся с помощью данного инструмента 100% являются стабильными.
     Данный инструмент следует использовать перед просмотром изменений относительно определённой версии (с помощью инструмента version_diff_hash) или для отката к определённой версии с помощью инструмента version_rollback.
     """
-    return on_command(json.dumps({
+    return registry.on_command({
         "type": "git",
         "command": {
             "command": "log"
         }
-    }))
+    })
 
 
 @tool
-def version_rollback(_hash) -> str:
+def version_rollback(_hash: str) -> str:
     """Позволяет откатить файлы сервера (агента) к состоянию определённой версии, которая задаётся с помощью хэша, получаемого из инструмента version_log.
     После применения version_rollback абсолютно все файлы на сервере будут соответствовать заданной стабильной версии.
     Следует использовать данный инструмент только в тех случаях, когда необходимо серьёзно откатить версию сервера для последующих изменений.
@@ -380,10 +397,10 @@ def version_rollback(_hash) -> str:
     Args:
         _hash: хэш версии сервера (агента), на которую следует откатиться.
     """
-    return on_command(json.dumps({
+    return registry.on_command({
         "type": "git",
         "command": {
             "command": "rollback",
-            "hash": _hash
+            "target_sha": _hash
         }
-    }))
+    })

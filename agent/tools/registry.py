@@ -25,6 +25,7 @@ class Tool:
     description: str
     func: Callable[..., Any]
     parameters: Dict[str, Any]                    # JSON-schema объекта параметров
+    default_target: str = "server"                # куда роутить вызов, если модель не указала target явно
 
     def __call__(self, **kwargs: Any) -> Any:
         return self.func(**kwargs)
@@ -94,7 +95,9 @@ TARGET_PARAM = "target"
 DEFAULT_TARGET = "server"
 
 
-def _build_schema(func: Callable[..., Any], param_docs: Dict[str, str]) -> Dict[str, Any]:
+def _build_schema(
+        func: Callable[..., Any], param_docs: Dict[str, str], default_target: str = "server"
+) -> Dict[str, Any]:
     props: Dict[str, Any] = {}
     required: List[str] = []
     for pname, p in inspect.signature(func).parameters.items():
@@ -108,7 +111,7 @@ def _build_schema(func: Callable[..., Any], param_docs: Dict[str, str]) -> Dict[
         "type": "string",
         "enum": ["server", "client"],
         "description": (
-            "Где выполнить инструмент: 'server' — в контейнере агента (по умолчанию), "
+            f"Где выполнить инструмент (по умолчанию '{default_target}'): 'server' — в контейнере агента, "
             "'client' — на машине пользователя, запустившей клиент."
         ),
     }
@@ -118,16 +121,19 @@ def _build_schema(func: Callable[..., Any], param_docs: Dict[str, str]) -> Dict[
 def tool(_func: Optional[Callable] = None, *,
          name: Optional[str] = None,
          description: Optional[str] = None,
-         parameters: Optional[Dict[str, Any]] = None):
+         parameters: Optional[Dict[str, Any]] = None,
+         default_target: str = "server"):
     """Декоратор. Использование: @tool (всё берётся из docstring) либо
-    @tool(name=..., description=..., parameters=...) для явного переопределения."""
+    @tool(name=..., description=..., parameters=..., default_target=...) для явного переопределения.
+    default_target="client" — для инструментов, которым нужна машина/терминал пользователя (см. ask_user)."""
     def deco(func: Callable[..., Any]) -> Callable[..., Any]:
         doc_summary, param_docs = _parse_docstring(func.__doc__)
         t = Tool(
             name=name or func.__name__,
             description=description or doc_summary,
             func=func,
-            parameters=parameters or _build_schema(func, param_docs),
+            parameters=parameters or _build_schema(func, param_docs, default_target),
+            default_target=default_target,
         )
         _REGISTRY[t.name] = t
         return func
@@ -170,10 +176,15 @@ def truncate_middle(text: str, max_chars: int) -> str:
 
 
 def tool_target(call: Dict[str, Any]) -> str:
-    """Куда модель просит выполнить вызов: 'server' (по умолчанию) или 'client'."""
+    """Куда выполнить вызов: явный target из аргументов модели, иначе default_target
+    самого инструмента (см. Tool.default_target), иначе 'server'."""
     fn = call.get("function", call)
     args = _normalize_args(fn.get("arguments"))
-    return args.get(TARGET_PARAM) or DEFAULT_TARGET
+    explicit = args.get(TARGET_PARAM)
+    if explicit:
+        return explicit
+    registered = _REGISTRY.get(fn.get("name"))
+    return registered.default_target if registered else DEFAULT_TARGET
 
 
 def execute_tool(call: Dict[str, Any]) -> tuple:

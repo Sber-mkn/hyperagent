@@ -3,6 +3,7 @@ import sys
 import traceback
 
 from agent.main import agent_logic
+from agent.tools import registry
 from agent_immutable.on_functions import (
     on_command,
     on_content,
@@ -23,6 +24,7 @@ if __name__ == "__main__":
 
     rabbitmq = RabbitMQAgent()
     set_rabbitmq(rabbitmq)
+    registry.on_command = on_command
     rabbitmq.start_consuming()
 
     command, task, error, llm_chat = rabbitmq.get_command()
