@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 
-from agent.config import DATA_DIR
 from agent.tools.registry import tool, truncate_middle
 
 
@@ -19,6 +18,8 @@ def skill_view(name: str) -> str:
     Args:
         name: Exact skill name returned by skills_list.
     """
+    from agent.config import DATA_DIR
+
     if not _SKILL_NAME.fullmatch(name):
         return f"[invalid skill name: {name}]"
 

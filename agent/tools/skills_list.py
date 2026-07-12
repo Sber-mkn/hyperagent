@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 
-from agent.config import DATA_DIR
 from agent.tools.registry import tool
 
 
 @tool
 def skills_list() -> str:
     """List learned skills with descriptions so a relevant one can be selected."""
+    from agent.config import DATA_DIR
+
     skills_dir = DATA_DIR / "skills"
     catalog: list[dict[str, str]] = []
 
