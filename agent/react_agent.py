@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from agent.llminterface.agent_chain.execs import ExecEffect, ExecLambda, ExecUpdate
 from agent.llminterface.agent_graph.agent_graph import END, AgentGraph
+from agent.llminterface.client.llm_chat import LLMMessage
 from agent.llminterface.client.llm_client import LLMClient
 from agent.memory import Turn
 from agent.tools import execute_tool, tool_target, truncate_middle
@@ -13,6 +14,7 @@ from agent.tools import execute_tool, tool_target, truncate_middle
 
 MAX_TOOL_RESULT_CHARS = 24_000
 TOOL_PREVIEW_CHARS = 300
+MAX_COMPLETION_RETRIES = 2
 
 
 def build_agent(client: LLMClient) -> AgentGraph:
@@ -23,7 +25,14 @@ def build_agent(client: LLMClient) -> AgentGraph:
         store.maybe_compress(state["memory_summarizer"].summarize)
 
         data = state.to_dict()
-        data["chat"] = state["memory_context"].build_chat()
+        chat = state["memory_context"].build_chat()
+        feedback = state.get("completion_feedback")
+        if feedback:
+            chat += LLMMessage.from_message(
+                {"role": "system", "content": feedback}
+            )
+        data["chat"] = chat
+        data["completion_feedback"] = ""
         data["iterations"] = state.get("iterations", 0) + 1
         return data
 
@@ -32,7 +41,7 @@ def build_agent(client: LLMClient) -> AgentGraph:
         return client.stream(
             state["chat"],
             on_chunk_think=state.get("on_think"),
-            on_chunk_content=state.get("on_content"),
+            on_chunk_content=None,
             model=state["model"],
             tools=state["tools"],
             **options,
@@ -40,14 +49,15 @@ def build_agent(client: LLMClient) -> AgentGraph:
 
     def record_assistant(state) -> None:
         message = state["chat"][-1]
-        _emit(state.get("on_end_message"), message)
-        state["memory_store"].append(
-            Turn(
-                role="assistant",
-                content=message.content or "",
-                tool_calls=message.tool_calls,
+        if message.tool_calls:
+            _emit(state.get("on_end_message"), message)
+            state["memory_store"].append(
+                Turn(
+                    role="assistant",
+                    content=message.content or "",
+                    tool_calls=message.tool_calls,
+                )
             )
-        )
 
     model_node = (
         ExecLambda(prepare_context)
@@ -65,10 +75,16 @@ def build_agent(client: LLMClient) -> AgentGraph:
         task = state["user_message"]
         state["memory_store"].set_task(task)
         _emit(state.get("on_title"), _title(task))
-        return {"iterations": 0}
+        return {
+            "iterations": 0,
+            "completion_retries": 0,
+            "completion_feedback": "",
+            "completion_verified": False,
+            "review_available": True,
+        }
 
     def route_model(state):
-        return "tools" if state["chat"][-1].tool_calls else "finalize"
+        return "tools" if state["chat"][-1].tool_calls else "review"
 
     def tool_node(state) -> dict[str, Any]:
         for call in state["chat"][-1].tool_calls or []:
@@ -80,9 +96,57 @@ def build_agent(client: LLMClient) -> AgentGraph:
             return "limit"
         return "model"
 
+    def review_node(state) -> dict[str, Any]:
+        message = state["chat"][-1]
+        review = state["completion_checker"].check(
+            task=state["user_message"],
+            turns=state["memory_store"].current_exchange(),
+            candidate_answer=message.content or "",
+        )
+        if review.completed:
+            return {
+                "candidate_message": message,
+                "completion_verified": True,
+                "last_completion_reason": review.reason,
+                "review_available": True,
+            }
+
+        retries = state.get("completion_retries", 0) + 1
+        return {
+            "candidate_message": message,
+            "completion_verified": False,
+            "completion_retries": retries,
+            "last_completion_reason": review.reason,
+            "review_available": review.available,
+            "completion_feedback": (
+                "Your proposed final answer was not sent to the user because the "
+                f"task is incomplete. Missing evidence: {review.reason} "
+                "Continue the task with the required tools. Do not claim success "
+                "until the result is verified."
+            ),
+        }
+
+    def route_review(state):
+        if state["completion_verified"]:
+            return "finalize"
+        if not state["review_available"]:
+            return "verification_failed"
+        if state["completion_retries"] >= MAX_COMPLETION_RETRIES:
+            return "verification_failed"
+        if state["iterations"] >= state["max_iterations"]:
+            return "limit"
+        return "model"
+
     def finalize_node(state) -> dict[str, str]:
+        message = state["candidate_message"]
+        answer = (message.content or "").strip()
+        _emit(state.get("on_end_message"), message)
+        state["memory_store"].append(Turn(role="assistant", content=answer))
+        _emit(state.get("on_content"), answer)
+
         learned_skill = state["skill_manager"].consider(
-            state["memory_store"].current_exchange()
+            state["memory_store"].current_exchange(),
+            completion_verified=True,
         )
         if learned_skill:
             _emit(
@@ -91,7 +155,24 @@ def build_agent(client: LLMClient) -> AgentGraph:
                 f"Name: {learned_skill.name}\n"
                 f"Saved to: {learned_skill.path.as_posix()}",
             )
-        return {"answer": (state["chat"][-1].content or "").strip()}
+        return {"answer": answer}
+
+    def verification_failed_node(state) -> dict[str, str]:
+        reason = state.get("last_completion_reason") or "Unknown requirement"
+        if state.get("review_available", True):
+            answer = (
+                "The task could not be verified after 2 correction attempts.\n\n"
+                f"Missing requirement: {reason}\n\n"
+                "The task remains incomplete. No skill was created."
+            )
+        else:
+            answer = (
+                "The task result could not be verified because the verification "
+                f"step failed. Reason: {reason}\n\nNo skill was created."
+            )
+        state["memory_store"].append(Turn(role="assistant", content=answer))
+        _emit(state.get("on_content"), answer)
+        return {"answer": answer}
 
     def limit_node(state):
         raise RuntimeError(
@@ -103,13 +184,17 @@ def build_agent(client: LLMClient) -> AgentGraph:
         .add_node("start", start_node)
         .add_node("model", model_node)
         .add_node("tools", tool_node)
+        .add_node("review", review_node)
         .add_node("finalize", finalize_node)
+        .add_node("verification_failed", verification_failed_node)
         .add_node("limit", limit_node)
         .set_entry("start")
         .add_edge("start", "model")
         .add_conditional_edge("model", route_model)
         .add_conditional_edge("tools", route_tools)
+        .add_conditional_edge("review", route_review)
         .add_edge("finalize", END)
+        .add_edge("verification_failed", END)
         .add_edge("limit", END)
     )
 

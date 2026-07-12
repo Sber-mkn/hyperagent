@@ -6,16 +6,17 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent.llminterface.client.llm_chat import LLMChat
 from agent.llminterface.client.llm_client import LLMClient
-from agent.memory.store import Turn
+
+if TYPE_CHECKING:
+    from agent.memory.store import Turn
 
 
 MIN_TOOL_CALLS = 3
 MIN_DISTINCT_TOOLS = 2
-MAX_LOADED_SKILL_CHARS = 16_000
 _SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
@@ -37,8 +38,15 @@ class SkillManager:
         manager.data_dir.mkdir(parents=True, exist_ok=True)
         return manager
 
-    def consider(self, turns: list[Turn]) -> LearnedSkill | None:
+    def consider(
+        self,
+        turns: list[Turn],
+        completion_verified: bool = False,
+    ) -> LearnedSkill | None:
         """Save one reusable skill when a completed task is complex enough."""
+        if not completion_verified:
+            return None
+
         tool_names = _tool_names(turns)
         if (
             len(tool_names) < MIN_TOOL_CALLS
@@ -114,23 +122,6 @@ class SkillManager:
         temporary.write_text(content, encoding="utf-8")
         temporary.replace(path)
         return LearnedSkill(name=skill["name"], path=path)
-
-
-def load_skills(data_dir: Path) -> str:
-    """Load persisted skills with a bounded context cost."""
-    skills_dir = Path(data_dir) / "skills"
-    if not skills_dir.is_dir():
-        return ""
-
-    loaded: list[str] = []
-    size = 0
-    for path in sorted(skills_dir.glob("*.md")):
-        content = path.read_text(encoding="utf-8").strip()
-        if not content or size + len(content) > MAX_LOADED_SKILL_CHARS:
-            continue
-        loaded.append(content)
-        size += len(content)
-    return "\n\n".join(loaded)
 
 
 def _tool_names(turns: list[Turn]) -> list[str]:

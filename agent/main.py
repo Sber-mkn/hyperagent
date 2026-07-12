@@ -16,6 +16,7 @@ from agent.config import (
     OPENAI_BASE_URL,
     SUMMARIZER_MODEL,
 )
+from agent.completion import CompletionChecker
 from agent.llminterface.agent_graph.agent_state import AgentState
 from agent.llminterface.client.llm_client import LLMClient
 from agent.llminterface.client.providers.ollama_client import OllamaClient
@@ -59,6 +60,7 @@ def agent_logic(
                     recovery_notice=_rollback_notice(error_text),
                 ),
                 "memory_summarizer": Summarizer(client, SUMMARIZER_MODEL),
+                "completion_checker": CompletionChecker(client, SUMMARIZER_MODEL),
                 "skill_manager": skill_manager,
                 "max_iterations": MAX_ITERATIONS,
                 "on_think": on_think,
