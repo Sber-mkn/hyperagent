@@ -121,6 +121,17 @@ class MemoryStore:
     def tail_tokens(self) -> int:
         return sum(estimate_tokens(turn.context_text()) for turn in self.tail)
 
+    def current_exchange(self) -> list[Turn]:
+        """Return the latest user task and all turns produced for it."""
+        return list(self.tail[self._current_turn_start():])
+
+    def _current_turn_start(self) -> int:
+        """Index of the latest user message; turns from here stay uncompressed."""
+        for index in range(len(self.tail) - 1, -1, -1):
+            if self.tail[index].role == "user":
+                return index
+        return len(self.tail)
+
     def maybe_compress(self, summarize: Callable[[list[Turn]], str]) -> bool:
         changed = False
         while self.tail and self.tail_tokens() > self.l2_token_budget:
@@ -143,16 +154,22 @@ class MemoryStore:
 
     def _compression_segment(self) -> tuple[int, int] | None:
         """Choose an old complete exchange without orphaning tool messages."""
-        for index in range(1, len(self.tail)):
-            if self.tail[index].role == "user":
+        protected_from = self._current_turn_start()
+        if protected_from <= 0:
+            return None
+
+        compressible = self.tail[:protected_from]
+
+        for index in range(1, len(compressible)):
+            if compressible[index].role == "user":
                 return 0, index
 
-        start = 1 if self.tail and self.tail[0].role == "user" else 0
-        if start >= len(self.tail):
+        start = 1 if compressible and compressible[0].role == "user" else 0
+        if start >= len(compressible):
             return None
 
         end = start + 1
-        while end < len(self.tail) and self.tail[end].role == "tool":
+        while end < len(compressible) and compressible[end].role == "tool":
             end += 1
         return start, end
 

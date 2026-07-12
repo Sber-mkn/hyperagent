@@ -22,6 +22,7 @@ from agent.llminterface.client.providers.ollama_client import OllamaClient
 from agent.llminterface.client.providers.openai_client import OpenaiClient
 from agent.memory import ContextManager, MemoryStore, Summarizer
 from agent.react_agent import build_agent
+from agent.skills import SkillManager
 from agent.tools import tools_spec
 
 
@@ -43,6 +44,7 @@ def agent_logic(
     client, model_options = _build_client()
 
     store = MemoryStore.open(DATA_DIR, L2_TOKEN_BUDGET)
+    skill_manager = SkillManager.open(client, SUMMARIZER_MODEL, DATA_DIR / "skills")
     agent = build_agent(client)
     final = agent.stream(
         AgentState(
@@ -57,6 +59,7 @@ def agent_logic(
                     recovery_notice=_rollback_notice(error_text),
                 ),
                 "memory_summarizer": Summarizer(client, SUMMARIZER_MODEL),
+                "skill_manager": skill_manager,
                 "max_iterations": MAX_ITERATIONS,
                 "on_think": on_think,
                 "on_content": on_content,

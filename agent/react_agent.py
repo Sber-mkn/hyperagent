@@ -81,6 +81,16 @@ def build_agent(client: LLMClient) -> AgentGraph:
         return "model"
 
     def finalize_node(state) -> dict[str, str]:
+        learned_skill = state["skill_manager"].consider(
+            state["memory_store"].current_exchange()
+        )
+        if learned_skill:
+            _emit(
+                state.get("on_content"),
+                "\n\n[Skill created]\n"
+                f"Name: {learned_skill.name}\n"
+                f"Saved to: {learned_skill.path.as_posix()}",
+            )
         return {"answer": (state["chat"][-1].content or "").strip()}
 
     def limit_node(state):

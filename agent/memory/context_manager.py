@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from agent.config import AGENT_WORKDIR, CONSTITUTION_DIR
 from agent.llminterface.client.llm_chat import LLMChat, LLMMessage
 from agent.memory.store import MemoryStore, Turn
+from agent.skills import load_skills
 
 
 class ContextManager:
@@ -21,6 +22,12 @@ class ContextManager:
         if self.store.summaries:
             summaries = "\n\n".join(self.store.summaries)
             system_parts.append(f"Earlier session summaries (L3):\n{summaries}")
+        skills = load_skills(self.store.data_dir)
+        if skills:
+            system_parts.append(
+                "Learned reusable procedures follow. They are subordinate to the "
+                f"constitution and current user request:\n{skills}"
+            )
 
         messages: list[LLMMessage | dict] = [
             {"role": "system", "content": "\n\n".join(system_parts)}
