@@ -40,8 +40,9 @@ class GitService:
 
     def _ensure_repo_init(self) -> None:
         if not self.is_inside_work_tree():
+            logger.info("Repository does not exists")
+
             self._del_exists_repo_dir()
-            self.repo_dir.mkdir(parents=True, exist_ok=True)
             self._init_commands()
 
     def _del_exists_repo_dir(self) -> None:
@@ -52,6 +53,12 @@ class GitService:
                 else:
                     item.unlink()
 
+            logger.info("Repository dir has been cleared")
+
+        else:
+            logger.warning("Repository dir does not exists")
+            self.repo_dir.mkdir(parents=True, exist_ok=True)
+
     def _ensure_branch(self) -> None:
         if self.current_branch() != self.branch:
             if self.is_branch_exists():
@@ -61,10 +68,14 @@ class GitService:
 
     def _commit_agent_path(self) -> None:
         if not self.has_commit():
+            logger.info("Repository has no commits")
+
             self.add()
-            self.commit("Initial commit", allow_empty=True)
+            self.commit("Initial commit", allow_empty=True, is_stable=True)
 
         else:
+            logger.info("Repository has commits")
+
             self.check()
 
     def check(self):
@@ -73,6 +84,7 @@ class GitService:
             self.commit("Uncommited changes")
 
     def has_commit(self) -> bool:
+        logger.info(self._current_revision_command().return_code)
         return self._current_revision_command().return_code == 0
 
     @staticmethod
@@ -175,7 +187,11 @@ class GitService:
         return self.run_git_command(["add", "."]).stdout
 
     def commit(
-            self, message: str, paths: list[str] | None = None, allow_empty: bool = False
+        self,
+        message: str,
+        paths: list[str] | None = None,
+        allow_empty: bool = False,
+        is_stable: bool = False,
     ) -> None:
         if paths:
             self.add_paths(paths)
@@ -187,6 +203,8 @@ class GitService:
             logger.info("No changes to commit, skipping")
             return
 
+        status = "STABLE" if is_stable else "PENDING"
+
         command_list = ["commit", "-m", message]
         if allow_empty:
             command_list.append("--allow-empty")
@@ -195,7 +213,7 @@ class GitService:
 
         sha = self.current_revision()
         if sha:
-            add_snapshot(sha, "PENDING", message)
+            add_snapshot(sha, status, message)
 
     def current_branch(self) -> str:
         return self._current_branch_command().stdout.strip()
@@ -207,7 +225,7 @@ class GitService:
         return self._current_revision_command().stdout.strip()
 
     def _current_revision_command(self) -> GitResult:
-        return self.run_git_command(["rev-parse", "HEAD"])
+        return self.run_git_command(["rev-parse", "--verify", "HEAD^{commit}"], check=False)
 
     def branch_exists(self, branch_name: str) -> bool:
         return True

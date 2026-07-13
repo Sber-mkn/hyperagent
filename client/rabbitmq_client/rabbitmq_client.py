@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import pathlib
 import subprocess
 import threading
@@ -13,24 +14,52 @@ PASSWORD = "12345"
 EXCHANGE = "agent_exchange"
 CLIENT_QUEUE = "client_queue"
 ROUTING_KEY = "agent"
-WORKDIR = pathlib.Path("workdir")
+SUPERVISOR_ROUTING_KEY = "supervisor"
+RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
+RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
+WORKDIR = pathlib.Path(os.getenv("CLIENT_WORKDIR", "workdir"))
 
 logger = logging.getLogger(__name__)
 
 
 class RabbitMQClient(RabbitMQBase):
     def __init__(
-            self,
-            user=USER,
-            password=PASSWORD,
-            exchange=EXCHANGE,
-            queue=CLIENT_QUEUE,
-            routing_key=ROUTING_KEY,
+        self,
+        user=USER,
+        password=PASSWORD,
+        exchange=EXCHANGE,
+        queue=CLIENT_QUEUE,
+        routing_key=ROUTING_KEY,
+        host=RABBITMQ_HOST,
+        port=RABBITMQ_PORT,
     ):
-        super().__init__(user, password, exchange, queue, routing_key)
+        super().__init__(user, password, exchange, queue, routing_key, host=host, port=port)
         self.is_ready = False
         self.pending_message = None
+        self.agent_session = {}
         self.ready_event = threading.Event()
+        self._stream_kind = None  # "think"/"content"/None — для непрерывного вывода чанков
+
+    def send_login(
+        self,
+        login: str,
+        password: str,
+        agent_type: str,
+        agent_config: dict[str, str],
+    ) -> None:
+        self.agent_session = {
+            "agent_type": agent_type,
+            "agent_config": agent_config,
+        }
+        self.publish_message(
+            {
+                "type": "login",
+                "login": login,
+                "password": password,
+                **self.agent_session,
+            },
+            routing_key=SUPERVISOR_ROUTING_KEY,
+        )
 
     def receive_message(self, ch, method, properties, body):
         try:
@@ -51,7 +80,7 @@ class RabbitMQClient(RabbitMQBase):
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 
             elif message_type == "agent_message":
-                print(f"{message.get('message')} ({message.get('message_type')})")
+                self._print_agent_message(message.get("message_type"), message.get("message"))
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 
             elif message_type == "client_command":
@@ -67,7 +96,11 @@ class RabbitMQClient(RabbitMQBase):
                 self.send_response(
                     properties.reply_to,
                     properties.correlation_id,
-                    {"stdout": result.stdout},
+                    {
+                        "stdout": result.stdout,
+                        "stderr": result.stderr,
+                        "returncode": result.returncode,
+                    },
                 )
 
                 ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -80,8 +113,29 @@ class RabbitMQClient(RabbitMQBase):
             logger.exception("Error processing client message: %s", e)
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
+    def _print_agent_message(self, kind: str, text: str) -> None:
+        """Печатает чанки think/content единым потоком вместо строки на каждый чанк."""
+        if kind in ("think", "content"):
+            if self._stream_kind != kind:
+                label = "Думает" if kind == "think" else "Ответ"
+                print(f"\n\n{label}: ", end="", flush=True)
+                self._stream_kind = kind
+            print(text, end="", flush=True)
+        else:
+            self._stream_kind = None
+            if kind == "title":
+                print(f"\n\n=== {text} ===")
+            elif kind == "start":
+                print(f"\n\n--- Начало ответа модели {text} ---")
+            elif kind == "tool_call":
+                print(f"\n\n[Инструмент] {text}")
+            else:
+                print(f"\n\n{text} ({kind})")
+
     def publish(self):
         if self.pending_message is not None:
+            if self.agent_session:
+                self.pending_message["agent_session"] = self.agent_session
             body = json.dumps(self.pending_message, ensure_ascii=False)
             self.channel.basic_publish(
                 exchange=self.exchange,
