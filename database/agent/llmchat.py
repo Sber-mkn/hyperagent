@@ -19,10 +19,9 @@ class LLMMessage(Base):
     thinking: Mapped[str] = mapped_column(Text, default="", nullable=False)
     content: Mapped[str] = mapped_column(Text, default="", nullable=False)
     tool_calls: Mapped[Any] = mapped_column(JSONB, nullable=True)
-    tool_call_id: Mapped[str] = mapped_column(Text, nullable=True)
-    name: Mapped[str] = mapped_column(Text, nullable=True)
-    provider: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    model: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    tool_call_id: Mapped[str] = mapped_column(String(255), nullable=True)
+    provider: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    model: Mapped[str] = mapped_column(String(255), default="", nullable=False)
 
     tokens_prompt: Mapped[int] = mapped_column(Integer, nullable=True)
     tokens_response: Mapped[int] = mapped_column(Integer, nullable=True)
