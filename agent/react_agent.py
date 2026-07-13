@@ -38,14 +38,17 @@ def build_agent(client: LLMClient) -> AgentGraph:
 
     def call_model(state):
         options = dict(state.get("model_options") or {})
-        return client.stream(
+        content_chunks: list[str] = []
+        chat = client.stream(
             state["chat"],
             on_chunk_think=state.get("on_think"),
-            on_chunk_content=state.get("on_content"),
+            on_chunk_content=content_chunks.append,
             model=state["model"],
             tools=state["tools"],
             **options,
         )
+        state["candidate_content_chunks"] = content_chunks
+        return chat
 
     def record_assistant(state) -> None:
         message = state["chat"][-1]
@@ -142,8 +145,9 @@ def build_agent(client: LLMClient) -> AgentGraph:
         answer = (message.content or "").strip()
         _emit(state.get("on_end_message"), message)
         state["memory_store"].append(Turn(role="assistant", content=answer))
-        # Not re-emitted via on_content: it already streamed live chunk-by-chunk
-        # during call_model, since on_chunk_content is now wired to on_content.
+        chunks = state.get("candidate_content_chunks") or [answer]
+        for chunk in chunks:
+            _emit(state.get("on_content"), chunk)
 
         learned_skill = state["skill_manager"].consider(
             state["memory_store"].current_exchange(),
