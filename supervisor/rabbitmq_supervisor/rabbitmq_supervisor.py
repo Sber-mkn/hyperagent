@@ -28,6 +28,8 @@ class RabbitMQSupervisor(RabbitMQBase):
     ):
         super().__init__(user, password, exchange, queue, routing_key)
         self.git_service = git_service
+        self.agent_ready = True
+        self.agent_session = None
         logger.info("RabbitMQ connection established")
 
     def send_start_command(self, task=None, error_text=None, llm_chat=None):
@@ -40,6 +42,8 @@ class RabbitMQSupervisor(RabbitMQBase):
             message["error_text"] = error_text
         if llm_chat is not None:
             message["llm_chat"] = llm_chat
+        if self.agent_session is not None:
+            message["agent_session"] = self.agent_session
         self.publish_message(message)
 
     def send_ready_message(self):
@@ -59,6 +63,18 @@ class RabbitMQSupervisor(RabbitMQBase):
                 result = git_handler(message, self.git_service)
 
                 if result.get("restart_agent"):
+                    self.agent_ready = False
+                    self.publish_message(
+                        {
+                            "type": "agent_message",
+                            "message_type": "status",
+                            "message": (
+                                "Версия сохранена, инструменты обновлены. Перезапускаю агента, "
+                                "чтобы применить изменения — это займёт несколько секунд..."
+                            ),
+                        },
+                        CLIENT_KEY,
+                    )
                     start_agent()
                     self.send_start_command(llm_chat=get_llmchat())
                 else:
@@ -69,6 +85,7 @@ class RabbitMQSupervisor(RabbitMQBase):
                     )
 
             elif message_type == "error":
+                self.agent_ready = False
                 error_text = error_handler(message, self.git_service)
                 self.send_start_command(
                     task=message.get("task"),
@@ -78,7 +95,30 @@ class RabbitMQSupervisor(RabbitMQBase):
 
             elif message_type == "ack":
                 ack_handler(self.git_service)
+                self.agent_ready = True
                 self.send_ready_message()
+
+            elif message_type == "login":
+                self.agent_session = {
+                    "agent_type": message.get("agent_type"),
+                    "agent_config": message.get("agent_config") or {},
+                }
+                logger.info(
+                    "Client login request: agent_type=%s model=%s",
+                    self.agent_session.get("agent_type"),
+                    self.agent_session.get("agent_config", {}).get("AGENT_MODEL"),
+                )
+                if self.agent_ready:
+                    self.send_ready_message()
+                else:
+                    self.publish_message(
+                        {
+                            "type": "agent_message",
+                            "message_type": "status",
+                            "message": "Agent is starting, wait for ready.",
+                        },
+                        CLIENT_KEY,
+                    )
 
             else:
                 logger.info(f"Unknown type: {message_type}")

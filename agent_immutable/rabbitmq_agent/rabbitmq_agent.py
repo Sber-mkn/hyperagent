@@ -26,6 +26,15 @@ class RabbitMQAgent(RabbitMQBase):
         self.error_text = None
         self.llm_chat = []
         self.task = None
+        self.agent_session = {}
+
+    @staticmethod
+    def _agent_session_from_message(message: dict) -> dict:
+        session = message.get("agent_session") or {}
+        return {
+            "agent_type": session.get("agent_type"),
+            "agent_config": session.get("agent_config") or {},
+        }
 
     def receive_message(self, ch, method, properties, body):
         try:
@@ -35,6 +44,7 @@ class RabbitMQAgent(RabbitMQBase):
             self.command = message.get("command", "")
             self.error_text = message.get("error_text", None)
             self.llm_chat = message.get("llm_chat", [])
+            self.agent_session = self._agent_session_from_message(message)
             ch.basic_ack(delivery_tag=method.delivery_tag)
             ch.stop_consuming()
 
@@ -66,4 +76,4 @@ class RabbitMQAgent(RabbitMQBase):
         self.publish_message(message)
 
     def get_command(self):
-        return self.command, self.task, self.error_text, self.llm_chat
+        return self.command, self.task, self.error_text, self.llm_chat, self.agent_session

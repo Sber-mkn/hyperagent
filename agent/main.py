@@ -11,6 +11,8 @@ import logging
 import os
 import pathlib
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -40,15 +42,25 @@ class SessionReport:
         )
 
 
-def _end_message(content: str) -> dict:
-    return {
-        "done": True,
-        "role": "assistant",
-        "thinking": "",
-        "content": content,
-        "provider": "simulation",
-        "model": "simulation",
-    }
+@dataclass
+class EndMessage:
+    done: bool = True
+    done_reason: str | None = None
+    role: str = "assistant"
+    thinking: str = ""
+    content: str = ""
+    tool_calls: list[dict[str, Any]] | None = None
+    tool_call_id: str | None = None
+    name: str | None = None
+    provider: str = "simulation"
+    model: str = "simulation"
+    tokens: Any | None = None
+    duration: Any | None = None
+    dt: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+def _end_message(content: str) -> EndMessage:
+    return EndMessage(content=content)
 
 
 def _write_hello_file() -> pathlib.Path:
@@ -59,19 +71,44 @@ def _write_hello_file() -> pathlib.Path:
 
 
 def agent_logic(
-    on_command,
-    on_content,
-    on_end_message,
-    on_think,
+    on_command: Callable[[dict[str, Any]], Any] | None = None,
+    on_content: Callable[[str], Any] | None = None,
+    on_end_message: Callable[[Any], Any] | None = None,
+    on_think: Callable[[str], Any] | None = None,
     task: str = "",
     error_text: str | None = None,
     llm_chat: list[dict] | None = None,
+    *,
+    user_message: str | None = None,
+    on_title: Callable[[str], Any] | None = None,
+    on_tool: Callable[[dict[str, Any]], Any] | None = None,
+    on_tool_call: Callable[[str, Any, str, str], Any] | None = None,
+    on_start_message: Callable[[str], Any] | None = None,
+    agent_session: dict[str, Any] | None = None,
+    agent_type: str | None = None,
+    agent_config: dict[str, Any] | None = None,
 ) -> str:
+    if user_message is not None:
+        task = user_message
+    if on_tool is not None:
+        on_command = on_tool
+
+    raw_agent_session = agent_session or {}
+    agent_type = agent_type or raw_agent_session.get("agent_type")
+    agent_config = agent_config or raw_agent_session.get("agent_config") or {}
+
+    if on_command is None or on_content is None or on_end_message is None or on_think is None:
+        raise ValueError(
+            "agent_logic requires on_command/on_tool, on_content, on_end_message and on_think"
+        )
+
     logger.info(
-        "simulation agent start task=%r error=%s llm_chat=%d",
+        ("simulation agent start task=%r error=%s llm_chat=%d agent_type=%r model=%r"),
         task,
         bool(error_text),
         len(llm_chat or []),
+        agent_type,
+        agent_config.get("AGENT_MODEL"),
     )
 
     on_think("Симуляция: получил задачу и начинаю проверять callbacks.")
