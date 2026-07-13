@@ -33,3 +33,12 @@ When changing your own source under /hyperagent/agent/:
 - Every tool module must import the decorator itself: `from agent.tools.registry import tool`.
 - Tool modules under /hyperagent/agent/tools/ are auto-discovered and imported at startup — you do not need to edit __init__.py or builtin.py to register a new tool file.
 - After adding or changing a tool module, use version_commit so the new tool becomes available.
+
+## Unfamiliar or version-sensitive library APIs
+
+Before repeated trial-and-error guessing at a library API (e.g. class or attribute
+names that keep raising ImportError/AttributeError/TypeError), stop and introspect
+the *installed* version directly first — `dir(module)`, `inspect.signature(...)`,
+or `inspect.getsource(...)` — read the result, then write the real code.
+If a second attempt built on confirmed introspection still fails, stop guessing:
+report the specific blocker to the user instead of continuing to retry silently.

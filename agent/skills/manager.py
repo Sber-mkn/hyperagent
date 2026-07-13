@@ -27,14 +27,27 @@ class LearnedSkill:
 
 
 class SkillManager:
-    def __init__(self, client: LLMClient, model: str, data_dir: Path):
+    def __init__(
+        self,
+        client: LLMClient,
+        model: str,
+        data_dir: Path,
+        options: dict[str, Any] | None = None,
+    ):
         self.client = client
         self.model = model
         self.data_dir = Path(data_dir)
+        self.options = options or {}
 
     @classmethod
-    def open(cls, client: LLMClient, model: str, data_dir: Path) -> "SkillManager":
-        manager = cls(client, model, data_dir)
+    def open(
+        cls,
+        client: LLMClient,
+        model: str,
+        data_dir: Path,
+        options: dict[str, Any] | None = None,
+    ) -> "SkillManager":
+        manager = cls(client, model, data_dir, options)
         manager.data_dir.mkdir(parents=True, exist_ok=True)
         return manager
 
@@ -96,7 +109,7 @@ class SkillManager:
                 },
             ]
         )
-        response = self.client.send(chat, model=self.model, temperature=0)
+        response = self.client.send(chat, model=self.model, temperature=0, **self.options)
         data = _parse_json(response[-1].content or "")
         if not data.get("save"):
             return None

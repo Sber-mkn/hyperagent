@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from agent.llminterface.client.llm_chat import LLMChat
 from agent.llminterface.client.llm_client import LLMClient
@@ -10,9 +11,10 @@ from agent.memory.store import Turn
 
 
 class Summarizer:
-    def __init__(self, client: LLMClient, model: str):
+    def __init__(self, client: LLMClient, model: str, options: dict[str, Any] | None = None):
         self.client = client
         self.model = model
+        self.options = options or {}
 
     def summarize(self, turns: list[Turn]) -> str:
         if not turns:
@@ -36,5 +38,5 @@ class Summarizer:
                 },
             ]
         )
-        result = self.client.send(chat, model=self.model, temperature=0)
+        result = self.client.send(chat, model=self.model, temperature=0, **self.options)
         return (result[-1].content or "").strip()

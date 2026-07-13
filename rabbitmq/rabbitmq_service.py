@@ -13,32 +13,64 @@ class RequestResponseTimeoutError(TimeoutError):
     pass
 
 
+HEARTBEAT_SECONDS = 1800
+"""Comfortably above the slowest single blocking LLM call (Ollama HTTP timeout is 600s),
+so the connection survives long agent turns during which no AMQP frames are exchanged."""
+
+
 class RabbitMQBase(ABC):
     def __init__(self, user, password, exchange, queue, routing_key):
-        rabbitmq_url = f"amqp://{user}:{password}@rabbitmq:5672/"
-        self.connection = pika.BlockingConnection(pika.URLParameters(rabbitmq_url))
+        self._rabbitmq_url = f"amqp://{user}:{password}@rabbitmq:5672/"
         self.exchange = exchange
         self.queue = queue
         self.routing_key = routing_key
-        self.channel = self.connection.channel()
-        logger.info("RabbitMQ connection established")
-
+        self.connection = None
+        self.channel = None
         self.rpc_channel = None
         self.reply_queue = None
+        self._connect()
+
+    def _connection_params(self) -> pika.URLParameters:
+        params = pika.URLParameters(self._rabbitmq_url)
+        params.heartbeat = HEARTBEAT_SECONDS
+        return params
+
+    def _connect(self):
+        self.connection = pika.BlockingConnection(self._connection_params())
+        self.channel = self.connection.channel()
+        self.rpc_channel = None
+        self.reply_queue = None
+        logger.info("RabbitMQ connection established")
+
+    def _reconnect(self):
+        try:
+            self.connection.close()
+        except Exception:
+            pass
+        self._connect()
 
     def publish_message(self, message: dict, routing_key: str | None = None):
         body = json.dumps(message, ensure_ascii=False)
         if routing_key is None:
             routing_key = self.routing_key
-        try:
+
+        def _do_publish():
             self.channel.basic_publish(
                 exchange=self.exchange,
                 routing_key=routing_key,
                 body=body,
                 properties=pika.BasicProperties(delivery_mode=2, content_type="application/json"),
             )
-        except AMQPError as e:
-            logger.exception(e)
+
+        try:
+            _do_publish()
+        except AMQPError:
+            logger.exception(
+                "Publish failed (%s), reconnecting and retrying once", message.get("type")
+            )
+            self._reconnect()
+            _do_publish()
+
         logger.info(f"Message published: {message.get('type')}")
 
     def _ensure_reply_queue(self):

@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from agent.config import (
     AGENT_MODEL,
+    AGENT_NUM_CTX,
     DATA_DIR,
     L2_TOKEN_BUDGET,
     LLM_PROVIDER,
@@ -45,7 +46,7 @@ def agent_logic(
     client, model_options = _build_client()
 
     store = MemoryStore.open(DATA_DIR, L2_TOKEN_BUDGET)
-    skill_manager = SkillManager.open(client, SUMMARIZER_MODEL, DATA_DIR / "skills")
+    skill_manager = SkillManager.open(client, SUMMARIZER_MODEL, DATA_DIR / "skills", model_options)
     agent = build_agent(client)
     final = agent.stream(
         AgentState(
@@ -59,8 +60,8 @@ def agent_logic(
                     store,
                     recovery_notice=_rollback_notice(error_text),
                 ),
-                "memory_summarizer": Summarizer(client, SUMMARIZER_MODEL),
-                "completion_checker": CompletionChecker(client, SUMMARIZER_MODEL),
+                "memory_summarizer": Summarizer(client, SUMMARIZER_MODEL, model_options),
+                "completion_checker": CompletionChecker(client, SUMMARIZER_MODEL, model_options),
                 "skill_manager": skill_manager,
                 "max_iterations": MAX_ITERATIONS,
                 "on_think": on_think,
@@ -79,7 +80,7 @@ def agent_logic(
 def _build_client() -> tuple[LLMClient, dict[str, Any]]:
     if LLM_PROVIDER == "ollama":
         return OllamaClient(url=OLLAMA_URL), {
-            "num_ctx": 110_000,
+            "num_ctx": AGENT_NUM_CTX,
             "num_predict": MAX_OUTPUT_TOKENS,
         }
     if LLM_PROVIDER in {"openai", "openrouter", "api"}:

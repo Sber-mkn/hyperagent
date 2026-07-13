@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from agent.llminterface.client.llm_chat import LLMChat
 from agent.llminterface.client.llm_client import LLMClient
@@ -22,9 +22,10 @@ class CompletionReview:
 
 
 class CompletionChecker:
-    def __init__(self, client: LLMClient, model: str):
+    def __init__(self, client: LLMClient, model: str, options: dict[str, Any] | None = None):
         self.client = client
         self.model = model
+        self.options = options or {}
 
     def check(
         self,
@@ -64,7 +65,7 @@ class CompletionChecker:
         )
 
         try:
-            response = self.client.send(chat, model=self.model, temperature=0)
+            response = self.client.send(chat, model=self.model, temperature=0, **self.options)
             data = _parse_json(response[-1].content or "")
             completed = data.get("completed") is True
             reason = " ".join(str(data.get("reason") or "").split())
