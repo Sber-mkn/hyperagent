@@ -13,11 +13,12 @@ USER = "client"
 PASSWORD = "12345"
 EXCHANGE = "agent_exchange"
 CLIENT_QUEUE = "client_queue"
-ROUTING_KEY = "agent"
+ROUTING_KEY = "supervisor"
 SUPERVISOR_ROUTING_KEY = "supervisor"
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
 WORKDIR = pathlib.Path(os.getenv("CLIENT_WORKDIR", "workdir"))
+CHAT_ID = 1
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +166,6 @@ class RabbitMQClient(RabbitMQBase):
                 self.ready_event.set()
                 continue
 
-            message = {"task": user_input, "command": "start"}
+            message = {"task": user_input, "command": "start", "chat_id": CHAT_ID}
             self.pending_message = message
             self.connection.add_callback_threadsafe(self.publish)

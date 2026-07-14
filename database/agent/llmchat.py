@@ -1,18 +1,29 @@
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, String, Text, Boolean, Integer
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql.functions import current_timestamp
-from typing import Any
 
 
 class Base(DeclarativeBase):
     pass
 
+
+class LLMChat(Base):
+    __tablename__ = "llm_chats"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+
 class LLMMessage(Base):
     __tablename__ = "llmchat"
     id: Mapped[int] = mapped_column(primary_key=True)
+    chat_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("llm_chats.id", onupdate="CASCADE", ondelete="CASCADE"),
+        nullable=False,
+    )
     done: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     done_reason: Mapped[str] = mapped_column(Text, nullable=True)
     role: Mapped[str] = mapped_column(String(10), nullable=False)

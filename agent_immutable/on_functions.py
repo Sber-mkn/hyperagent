@@ -13,6 +13,7 @@ def on_command(command: dict) -> dict:
     command_type = command.get("type")
 
     if command_type == "git":
+        command["chat_id"] = rabbitmq.chat_id
         return rabbitmq.request_response(command, routing_key=SUPERVISOR_ROUTING_KEY)
     elif command_type == "server_command":
         return {}
@@ -23,7 +24,7 @@ def on_command(command: dict) -> dict:
 
 
 def on_end_message(message) -> None:
-    add_message(_llm_message_to_dict(message))
+    add_message(_llm_message_to_dict(message), get_rabbitmq().chat_id)
 
 
 def _llm_message_to_dict(message) -> dict:

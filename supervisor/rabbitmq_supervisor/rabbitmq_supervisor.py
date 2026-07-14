@@ -32,7 +32,7 @@ class RabbitMQSupervisor(RabbitMQBase):
         self.agent_session = None
         logger.info("RabbitMQ connection established")
 
-    def send_start_command(self, task=None, error_text=None, llm_chat=None):
+    def send_start_command(self, task=None, error_text=None, llm_chat=None, chat_id=None):
         message = {
             "command": "start",
         }
@@ -42,6 +42,8 @@ class RabbitMQSupervisor(RabbitMQBase):
             message["error_text"] = error_text
         if llm_chat is not None:
             message["llm_chat"] = llm_chat
+        if chat_id is not None:
+            message["chat_id"] = chat_id
         if self.agent_session is not None:
             message["agent_session"] = self.agent_session
         self.publish_message(message)
@@ -59,7 +61,16 @@ class RabbitMQSupervisor(RabbitMQBase):
             message_type = message.get("type")
             logger.info("Message consumed: %s", message_type)
 
-            if message_type == "git":
+            if message.get("command") == "start":
+                chat_id = message.get("chat_id")
+                logger.info(chat_id)
+                self.send_start_command(
+                    task=message.get("task"),
+                    llm_chat=get_llmchat(chat_id),
+                    chat_id=chat_id,
+                )
+
+            elif message_type == "git":
                 result = git_handler(message, self.git_service)
 
                 if result.get("restart_agent"):
@@ -76,7 +87,9 @@ class RabbitMQSupervisor(RabbitMQBase):
                         CLIENT_KEY,
                     )
                     start_agent()
-                    self.send_start_command(llm_chat=get_llmchat())
+
+                    chat_id = message.get("chat_id")
+                    self.send_start_command(llm_chat=get_llmchat(chat_id), chat_id=chat_id)
                 else:
                     self.send_response(
                         reply_to=properties.reply_to,
@@ -85,12 +98,14 @@ class RabbitMQSupervisor(RabbitMQBase):
                     )
 
             elif message_type == "error":
+                chat_id = message.get("chat_id")
                 self.agent_ready = False
                 error_text = error_handler(message, self.git_service)
                 self.send_start_command(
                     task=message.get("task"),
                     error_text=error_text,
-                    llm_chat=get_llmchat(),
+                    llm_chat=get_llmchat(chat_id),
+                    chat_id=chat_id,
                 )
 
             elif message_type == "ack":
