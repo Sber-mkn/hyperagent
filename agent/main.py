@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
-AGENT_WORKDIR = pathlib.Path(os.getenv("AGENT_WORKDIR", "/hyperagent/agent/workdir"))
+AGENT_ROOT = pathlib.Path(os.getenv("AGENT_ROOT", "/hyperagent/agent"))
 
 
 @dataclass
@@ -64,10 +64,16 @@ def _end_message(content: str) -> EndMessage:
 
 
 def _write_hello_file() -> pathlib.Path:
-    AGENT_WORKDIR.mkdir(parents=True, exist_ok=True)
-    hello_file = AGENT_WORKDIR / "hello.py"
+    AGENT_ROOT.mkdir(parents=True, exist_ok=True)
+    hello_file = AGENT_ROOT / "hello.py"
     hello_file.write_text('print("Привет!")\n', encoding="utf-8")
     return hello_file
+
+
+def _delete_hello_file() -> None:
+    hello_file = AGENT_ROOT / "hello.py"
+    if hello_file.exists():
+        hello_file.unlink()
 
 
 def agent_logic(
@@ -84,7 +90,9 @@ def agent_logic(
     on_tool: Callable[[dict[str, Any]], Any] | None = None,
     on_tool_call: Callable[[str, Any, str, str], Any] | None = None,
     on_start_message: Callable[[str], Any] | None = None,
+    on_l3: Callable[[dict[str, Any]], Any] | None = None,
     agent_session: dict[str, Any] | None = None,
+    l3_memory: dict[str, Any] | None = None,
     agent_type: str | None = None,
     agent_config: dict[str, Any] | None = None,
 ) -> str:
@@ -117,6 +125,7 @@ def agent_logic(
     if error_text:
         on_content(f"Получил error_text после rollback: {error_text[:500]}")
         on_end_message(_end_message("Симуляция завершила recovery после ошибки."))
+        _delete_hello_file()
         return SessionReport(
             client_status="success",
             client_answer="Recovered after simulated rollback.",
@@ -140,7 +149,14 @@ def agent_logic(
     diff_result = on_command({"type": "git", "command": {"command": "diff"}})
     on_content(f"git diff response: {diff_result}")
 
-    on_end_message(_end_message("Сейчас инициирую self-mod commit."))
+    last_message_id = on_end_message(_end_message("Сейчас инициирую self-mod commit."))
+    on_l3(
+        {
+            "summary": "Simulation L3 memory after end message.",
+            "last_message_id": last_message_id,
+        }
+    )
+
     commit_result = on_command(
         {
             "type": "git",
