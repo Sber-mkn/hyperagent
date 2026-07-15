@@ -13,6 +13,7 @@ if __name__ == "__main__":
         git = GitService()
         rabbitmq = RabbitMQSupervisor(git)
 
+        rabbitmq.send_ready_message()
         rabbitmq.start_consuming()
     except Exception as e:
         logger.exception(e)

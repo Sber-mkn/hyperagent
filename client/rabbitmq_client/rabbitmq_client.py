@@ -2,65 +2,37 @@ import json
 import logging
 import os
 import pathlib
-import subprocess
 import threading
 
 import pika
 
+from agent.tools import execute_tool
 from rabbitmq.rabbitmq_service import RabbitMQBase
 
 USER = "client"
 PASSWORD = "12345"
 EXCHANGE = "agent_exchange"
 CLIENT_QUEUE = "client_queue"
-ROUTING_KEY = "supervisor"
-SUPERVISOR_ROUTING_KEY = "supervisor"
-RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
-RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
-WORKDIR = pathlib.Path(os.getenv("CLIENT_WORKDIR", "workdir"))
-CHAT_ID = 1
+ROUTING_KEY = "agent"
+WORKDIR = pathlib.Path("workdir")
 
 logger = logging.getLogger(__name__)
 
 
 class RabbitMQClient(RabbitMQBase):
     def __init__(
-        self,
-        user=USER,
-        password=PASSWORD,
-        exchange=EXCHANGE,
-        queue=CLIENT_QUEUE,
-        routing_key=ROUTING_KEY,
-        host=RABBITMQ_HOST,
-        port=RABBITMQ_PORT,
+            self,
+            user=USER,
+            password=PASSWORD,
+            exchange=EXCHANGE,
+            queue=CLIENT_QUEUE,
+            routing_key=ROUTING_KEY,
     ):
-        super().__init__(user, password, exchange, queue, routing_key, host=host, port=port)
+        super().__init__(user, password, exchange, queue, routing_key)
         self.is_ready = False
         self.pending_message = None
-        self.agent_session = {}
         self.ready_event = threading.Event()
         self._stream_kind = None  # "think"/"content"/None — для непрерывного вывода чанков
-
-    def send_login(
-        self,
-        login: str,
-        password: str,
-        agent_type: str,
-        agent_config: dict[str, str],
-    ) -> None:
-        self.agent_session = {
-            "agent_type": agent_type,
-            "agent_config": agent_config,
-        }
-        self.publish_message(
-            {
-                "type": "login",
-                "login": login,
-                "password": password,
-                **self.agent_session,
-            },
-            routing_key=SUPERVISOR_ROUTING_KEY,
-        )
 
     def receive_message(self, ch, method, properties, body):
         try:
@@ -86,22 +58,17 @@ class RabbitMQClient(RabbitMQBase):
 
             elif message_type == "client_command":
                 WORKDIR.mkdir(parents=True, exist_ok=True)
-                result = subprocess.run(
-                    message.get("command", ""),
-                    cwd=WORKDIR,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                )
+                prev_cwd = os.getcwd()
+                try:
+                    os.chdir(WORKDIR)
+                    _, result = execute_tool(message.get("command", {}))
+                finally:
+                    os.chdir(prev_cwd)
 
                 self.send_response(
                     properties.reply_to,
                     properties.correlation_id,
-                    {
-                        "stdout": result.stdout,
-                        "stderr": result.stderr,
-                        "returncode": result.returncode,
-                    },
+                    {"result": str(result)},
                 )
 
                 ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -135,8 +102,6 @@ class RabbitMQClient(RabbitMQBase):
 
     def publish(self):
         if self.pending_message is not None:
-            if self.agent_session:
-                self.pending_message["agent_session"] = self.agent_session
             body = json.dumps(self.pending_message, ensure_ascii=False)
             self.channel.basic_publish(
                 exchange=self.exchange,
@@ -166,6 +131,6 @@ class RabbitMQClient(RabbitMQBase):
                 self.ready_event.set()
                 continue
 
-            message = {"task": user_input, "command": "start", "chat_id": CHAT_ID}
+            message = {"task": user_input, "command": "start"}
             self.pending_message = message
             self.connection.add_callback_threadsafe(self.publish)

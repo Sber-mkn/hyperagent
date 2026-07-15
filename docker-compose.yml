@@ -78,9 +78,6 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-    environment:
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_PORT=5672
     volumes:
       - ./client:/hyperagent/client
       - ./rabbitmq:/hyperagent/rabbitmq
