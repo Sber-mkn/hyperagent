@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import tokenize
 
-from database.crud import add_snapshot
+from database.crud import add_snapshot, get_stable_snapshots
 from supervisor.git_service.git_types import GitError, GitResult
 
 GIT_DIR = pathlib.Path("/hyperagent/agent_git")
@@ -217,6 +217,10 @@ class GitService:
 
         return True
 
+    @staticmethod
+    def log() -> dict:
+        return get_stable_snapshots()
+
     def current_branch(self) -> str:
         return self._current_branch_command().stdout.strip()
 
@@ -228,15 +232,6 @@ class GitService:
 
     def _current_revision_command(self) -> GitResult:
         return self.run_git_command(["rev-parse", "--verify", "HEAD^{commit}"], check=False)
-
-    def branch_exists(self, branch_name: str) -> bool:
-        return True
-
-    # def switch_branch(self, branch_name: str | None = None) -> None:
-    #     self.run_git_command(["switch", branch_name])
-    #
-    # def create_branch(self, branch_name: str, base_branch: str = "main") -> None:
-    #     self.run_git_command(["switch", "-c", branch_name, base_branch])
 
     def clean_untracked_files(self) -> None:
         self.run_git_command(["clean", "-fd"])
