@@ -25,6 +25,7 @@ class RabbitMQAgent(RabbitMQBase):
         self.command = None
         self.error_text = None
         self.llm_chat = []
+        self.l3_memory = None
         self.task = None
         self.agent_session = {}
         self.chat_id = None
@@ -45,6 +46,7 @@ class RabbitMQAgent(RabbitMQBase):
             self.command = message.get("command", "")
             self.error_text = message.get("error_text", None)
             self.llm_chat = message.get("llm_chat", [])
+            self.l3_memory = message.get("l3_memory")
             self.agent_session = self._agent_session_from_message(message)
             self.chat_id = message.get("chat_id", None)
             ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -78,4 +80,11 @@ class RabbitMQAgent(RabbitMQBase):
         self.publish_message(message)
 
     def get_command(self):
-        return self.command, self.task, self.error_text, self.llm_chat, self.agent_session
+        return (
+            self.command,
+            self.task,
+            self.error_text,
+            self.llm_chat,
+            self.l3_memory,
+            self.agent_session,
+        )

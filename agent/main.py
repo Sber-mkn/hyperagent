@@ -1,155 +1,138 @@
-"""Mutable agent entry called by agent_immutable/main.py.
-
-This file intentionally contains a lightweight simulation of the real agent loop.
-It exercises the callback surface used by the immutable runner and supervisor.
-"""
+"""Mutable agent entry point."""
 
 from __future__ import annotations
 
-import json
-import logging
-import os
-import pathlib
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any, Callable
 
-logger = logging.getLogger(__name__)
-
-AGENT_WORKDIR = pathlib.Path(os.getenv("AGENT_WORKDIR", "/hyperagent/agent/workdir"))
-
-
-@dataclass
-class SessionReport:
-    client_status: str = "success"
-    client_answer: str = ""
-    client_artifacts: list[str] = field(default_factory=list)
-    metrics: dict = field(default_factory=dict)
-
-    def to_json(self) -> str:
-        return json.dumps(
-            {
-                "client": {
-                    "status": self.client_status,
-                    "summary": self.client_answer[:500] if self.client_answer else "(no answer)",
-                    "answer": self.client_answer,
-                    "artifacts": self.client_artifacts,
-                },
-                "metrics": self.metrics,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-
-
-@dataclass
-class EndMessage:
-    done: bool = True
-    done_reason: str | None = None
-    role: str = "assistant"
-    thinking: str = ""
-    content: str = ""
-    tool_calls: list[dict[str, Any]] | None = None
-    tool_call_id: str | None = None
-    name: str | None = None
-    provider: str = "simulation"
-    model: str = "simulation"
-    tokens: Any | None = None
-    duration: Any | None = None
-    dt: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-def _end_message(content: str) -> EndMessage:
-    return EndMessage(content=content)
-
-
-def _write_hello_file() -> pathlib.Path:
-    AGENT_WORKDIR.mkdir(parents=True, exist_ok=True)
-    hello_file = AGENT_WORKDIR / "hello.py"
-    hello_file.write_text('print("Привет!")\n', encoding="utf-8")
-    return hello_file
+from agent.config import (
+    AGENT_MODEL,
+    AGENT_NUM_CTX,
+    DATA_DIR,
+    L2_TOKEN_BUDGET,
+    LLM_PROVIDER,
+    MAX_ITERATIONS,
+    MAX_OUTPUT_TOKENS,
+    OLLAMA_URL,
+    OPENAI_API_KEY,
+    OPENAI_BASE_URL,
+    SUMMARIZER_MODEL,
+)
+from agent.completion import CompletionChecker
+from agent.llminterface.agent_graph.agent_state import AgentState
+from agent.llminterface.client.llm_client import LLMClient
+from agent.llminterface.client.providers.ollama_client import OllamaClient
+from agent.llminterface.client.providers.openai_client import OpenaiClient
+from agent.memory import ContextManager, MemoryStore, Summarizer
+from agent.react_agent import build_agent
+from agent.skills import SkillManager
+from agent.tools import tools_spec
 
 
 def agent_logic(
-    on_command: Callable[[dict[str, Any]], Any] | None = None,
-    on_content: Callable[[str], Any] | None = None,
-    on_end_message: Callable[[Any], Any] | None = None,
+    user_message: str,
+    llm_chat: list[dict[str, Any]] | None = None,
+    l3_memory: dict[str, Any] | None = None,
+    agent_session: dict[str, Any] | None = None,
+    error_text: str = "",
     on_think: Callable[[str], Any] | None = None,
-    task: str = "",
-    error_text: str | None = None,
-    llm_chat: list[dict] | None = None,
-    *,
-    user_message: str | None = None,
+    on_content: Callable[[str], Any] | None = None,
     on_title: Callable[[str], Any] | None = None,
     on_tool: Callable[[dict[str, Any]], Any] | None = None,
     on_tool_call: Callable[[str, Any, str, str], Any] | None = None,
+    on_end_message: Callable[[Any], Any] | None = None,
+    on_l3: Callable[[dict[str, Any]], Any] | None = None,
     on_start_message: Callable[[str], Any] | None = None,
-    agent_session: dict[str, Any] | None = None,
-    agent_type: str | None = None,
-    agent_config: dict[str, Any] | None = None,
 ) -> str:
-    if user_message is not None:
-        task = user_message
-    if on_tool is not None:
-        on_command = on_tool
+    """Run one task and return the final assistant answer."""
+    task = (user_message or "").strip()
+    client, model_options = _build_client()
 
-    raw_agent_session = agent_session or {}
-    agent_type = agent_type or raw_agent_session.get("agent_type")
-    agent_config = agent_config or raw_agent_session.get("agent_config") or {}
-
-    if on_command is None or on_content is None or on_end_message is None or on_think is None:
-        raise ValueError(
-            "agent_logic requires on_command/on_tool, on_content, on_end_message and on_think"
+    store = MemoryStore.from_llm_chat(
+        llm_chat,
+        L2_TOKEN_BUDGET,
+        l3_memory=l3_memory,
+    )
+    skill_manager = SkillManager.open(client, SUMMARIZER_MODEL, DATA_DIR / "skills", model_options)
+    agent = build_agent(client)
+    final = agent.stream(
+        AgentState(
+            {
+                "user_message": task,
+                "model": AGENT_MODEL,
+                "model_options": model_options,
+                "tools": tools_spec(),
+                "memory_store": store,
+                "external_history": llm_chat is not None,
+                "resume_task": bool(error_text),
+                "agent_session": agent_session or {},
+                "memory_context": ContextManager(
+                    store,
+                    recovery_notice=_rollback_notice(error_text),
+                ),
+                "memory_summarizer": Summarizer(client, SUMMARIZER_MODEL, model_options),
+                "completion_checker": CompletionChecker(client, SUMMARIZER_MODEL, model_options),
+                "skill_manager": skill_manager,
+                "max_iterations": MAX_ITERATIONS,
+                "on_think": on_think,
+                "on_content": on_content,
+                "on_title": on_title,
+                "on_tool": on_tool,
+                "on_tool_call": on_tool_call,
+                "on_end_message": on_end_message,
+                "on_l3": on_l3,
+                "on_start_message": on_start_message,
+            }
         )
-
-    logger.info(
-        ("simulation agent start task=%r error=%s llm_chat=%d agent_type=%r model=%r"),
-        task,
-        bool(error_text),
-        len(llm_chat or []),
-        agent_type,
-        agent_config.get("AGENT_MODEL"),
     )
+    return str(final.get("answer") or "").strip()
 
-    on_think("Симуляция: получил задачу и начинаю проверять callbacks.")
-    on_content(f"Task: {task or '(empty)'}")
 
-    if error_text:
-        on_content(f"Получил error_text после rollback: {error_text[:500]}")
-        on_end_message(_end_message("Симуляция завершила recovery после ошибки."))
-        return SessionReport(
-            client_status="success",
-            client_answer="Recovered after simulated rollback.",
-            metrics={"mode": "recovery", "llm_chat_messages": len(llm_chat or [])},
-        ).to_json()
-
-    if llm_chat:
-        on_think("Симуляция: это запуск после self-mod commit, сейчас проверю error flow.")
-        on_end_message(_end_message("Симулирую падение после перезапуска агента."))
-        raise RuntimeError("Simulated agent failure after committed restart")
-
-    client_result = on_command({"type": "client_command", "command": "echo client-command-ok"})
-    on_content(f"client_command response: {client_result}")
-
-    status_before = on_command({"type": "git", "command": {"command": "status"}})
-    on_content(f"git status before change: {status_before}")
-
-    hello_file = _write_hello_file()
-    on_content(f"Создал файл: {hello_file.as_posix()}")
-
-    diff_result = on_command({"type": "git", "command": {"command": "diff"}})
-    on_content(f"git diff response: {diff_result}")
-
-    on_end_message(_end_message("Сейчас инициирую self-mod commit."))
-    commit_result = on_command(
-        {
-            "type": "git",
-            "command": {
-                "command": "commit",
-                "message": "Simulation: add hello file",
-            },
+def _build_client() -> tuple[LLMClient, dict[str, Any]]:
+    if LLM_PROVIDER == "ollama":
+        return OllamaClient(url=OLLAMA_URL), {
+            "num_ctx": AGENT_NUM_CTX,
+            "num_predict": MAX_OUTPUT_TOKENS,
         }
-    )
-    on_content(f"git commit response: {commit_result}")
+    if LLM_PROVIDER in {"openai", "openrouter", "api"}:
+        return (
+            OpenaiClient(base_url=OPENAI_BASE_URL, api_key=OPENAI_API_KEY),
+            {"max_tokens": MAX_OUTPUT_TOKENS},
+        )
+    raise ValueError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER}")
 
-    raise RuntimeError("Simulated failure after commit command returned")
+
+def _rollback_notice(error_text: str) -> str:
+    if not error_text:
+        return ""
+    return (
+        "Recovery notice: the agent source code was rolled back after a failed "
+        "modification. Conversation memory is stored separately and was preserved. "
+        "Use all previous dialogue normally. The traceback below is diagnostic "
+        "information, not a user message.\n\n"
+        f"Rollback traceback:\n{error_text.strip()}"
+    )
+
+
+if __name__ == "__main__":
+    from agent.ui import (
+        on_end_message,
+        on_start_message,
+        on_think_and_content,
+        on_title,
+        on_tool,
+        on_tool_call,
+    )
+
+    local_think, local_content = on_think_and_content()
+    print(
+        agent_logic(
+            user_message=input("Request: "),
+            on_think=local_think,
+            on_content=local_content,
+            on_title=on_title,
+            on_tool=on_tool,
+            on_tool_call=on_tool_call,
+            on_end_message=on_end_message,
+            on_start_message=on_start_message,
+        )
+    )

@@ -192,7 +192,7 @@ class GitService:
         paths: list[str] | None = None,
         allow_empty: bool = False,
         is_stable: bool = False,
-    ) -> None:
+    ) -> bool:
         if paths:
             self.add_paths(paths)
         else:
@@ -201,7 +201,7 @@ class GitService:
         status = self.status()
         if not status.strip() and not allow_empty:
             logger.info("No changes to commit, skipping")
-            return
+            return False
 
         status = "STABLE" if is_stable else "PENDING"
 
@@ -214,6 +214,8 @@ class GitService:
         sha = self.current_revision()
         if sha:
             add_snapshot(sha, status, message)
+
+        return True
 
     def current_branch(self) -> str:
         return self._current_branch_command().stdout.strip()

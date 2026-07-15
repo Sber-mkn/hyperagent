@@ -58,8 +58,10 @@ def git_handler(message: dict, git_service: GitService) -> dict | None:
 
         mark_pending_snapshot_stable()
         git_service.add()
-        git_service.commit(command.message)
-        return {"restart_agent": True}
+        if git_service.commit(command.message):
+            return {"restart_agent": True}
+        else:
+            return {"error": "no changes to commit"}
     elif isinstance(command, GitRollbackCommand):
         result = git_service.rollback(command.target_sha)
 

@@ -1,7 +1,7 @@
 import json
 import logging
 
-from database.agent.crud import get_llmchat
+from database.agent.crud import get_l3_memory, get_llmchat
 from rabbitmq.rabbitmq_service import RabbitMQBase
 from supervisor.message_handler import ack_handler, error_handler, git_handler
 from supervisor.rollback import start_agent
@@ -32,7 +32,14 @@ class RabbitMQSupervisor(RabbitMQBase):
         self.agent_session = None
         logger.info("RabbitMQ connection established")
 
-    def send_start_command(self, task=None, error_text=None, llm_chat=None, chat_id=None):
+    def send_start_command(
+        self,
+        task=None,
+        error_text=None,
+        llm_chat=None,
+        l3_memory=None,
+        chat_id=None,
+    ):
         message = {
             "command": "start",
         }
@@ -42,6 +49,8 @@ class RabbitMQSupervisor(RabbitMQBase):
             message["error_text"] = error_text
         if llm_chat is not None:
             message["llm_chat"] = llm_chat
+        if l3_memory is not None:
+            message["l3_memory"] = l3_memory
         if chat_id is not None:
             message["chat_id"] = chat_id
         if self.agent_session is not None:
@@ -67,6 +76,7 @@ class RabbitMQSupervisor(RabbitMQBase):
                 self.send_start_command(
                     task=message.get("task"),
                     llm_chat=get_llmchat(chat_id),
+                    l3_memory=get_l3_memory(chat_id),
                     chat_id=chat_id,
                 )
 
@@ -89,7 +99,11 @@ class RabbitMQSupervisor(RabbitMQBase):
                     start_agent()
 
                     chat_id = message.get("chat_id")
-                    self.send_start_command(llm_chat=get_llmchat(chat_id), chat_id=chat_id)
+                    self.send_start_command(
+                        llm_chat=get_llmchat(chat_id),
+                        l3_memory=get_l3_memory(chat_id),
+                        chat_id=chat_id,
+                    )
                 else:
                     self.send_response(
                         reply_to=properties.reply_to,
@@ -105,6 +119,7 @@ class RabbitMQSupervisor(RabbitMQBase):
                     task=message.get("task"),
                     error_text=error_text,
                     llm_chat=get_llmchat(chat_id),
+                    l3_memory=get_l3_memory(chat_id),
                     chat_id=chat_id,
                 )
 

@@ -21,11 +21,6 @@ create table errors
         on delete cascade
 );
 
-create table llm_chats
-(
-    id int primary key
-);
-
 create table llmchat
 (
     id serial primary key,
@@ -46,16 +41,20 @@ create table llmchat
     duration_prompt int default null,
     duration_response int default null,
     dt timestamp default current_timestamp,
-    constraint fk_llm_chat foreign key (chat_id)
-        references llm_chats (id)
-        on update cascade
-        on delete cascade,
     constraint check_role
     check (role in ('assistant', 'system', 'user', 'tool'))
 );
 
+create table l3_memory
+(
+    chat_id int primary key,
+    summary text not null,
+    created_at timestamp default current_timestamp,
+    last_message_id int not null
+);
+
 create user agent with password '12345';
 grant usage on schema public to agent;
-grant select, insert, update, delete on table llm_chats to agent;
 grant select, insert, update, delete on table llmchat to agent;
+grant select, insert, update, delete on table l3_memory to agent;
 grant usage, select on all sequences in schema public to agent;
