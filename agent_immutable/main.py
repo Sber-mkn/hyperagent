@@ -2,12 +2,13 @@ import logging
 import sys
 import traceback
 
+# from agent.tools import registry
 from agent.main import agent_logic
-from agent.tools import registry
 from agent_immutable.on_functions import (
     on_command,
     on_content,
     on_end_message,
+    on_l3,
     on_start_message,
     on_think,
     on_title,
@@ -24,10 +25,10 @@ if __name__ == "__main__":
 
     rabbitmq = RabbitMQAgent()
     set_rabbitmq(rabbitmq)
-    registry.on_command = on_command
+    # registry.on_command = on_command
     rabbitmq.start_consuming()
 
-    command, task, error, llm_chat = rabbitmq.get_command()
+    command, task, error, llm_chat, l3_memory, agent_session = rabbitmq.get_command()
 
     if command == "start":
         logger.info("Agent started")
@@ -42,7 +43,11 @@ if __name__ == "__main__":
                 on_tool=on_command,
                 on_tool_call=on_tool_call,
                 on_end_message=on_end_message,
+                on_l3=on_l3,
                 on_start_message=on_start_message,
+                llm_chat=llm_chat,
+                l3_memory=l3_memory,
+                agent_session=agent_session,
             )
             rabbitmq.send_ack()
 

@@ -16,7 +16,7 @@ _GOOGLE_PARAM = re.compile(r'^(\w+)\s*(?:\([^)]*\))?\s*:\s*(.*)$')      # name: 
 _SPHINX_PARAM = re.compile(r'^:param\s+(?:\w+\s+)?(\w+)\s*:\s*(.*)$')  # :param name: desc
 
 
-on_command: Optional[Callable[[str], Any]] = None
+on_command: Optional[Callable[[dict[str, Any]], Any]] = None
 
 
 @dataclass

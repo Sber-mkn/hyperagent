@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
 MIN_TOOL_CALLS = 3
 MIN_DISTINCT_TOOLS = 2
 _SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,7 @@ class SkillManager:
         self.model = model
         self.data_dir = Path(data_dir)
         self.options = options or {}
+        self.last_reason = "Skill learning was not evaluated."
 
     @classmethod
     def open(
@@ -58,19 +61,41 @@ class SkillManager:
     ) -> LearnedSkill | None:
         """Save one reusable skill when a completed task is complex enough."""
         if not completion_verified:
+            self.last_reason = "Task completion was not verified."
             return None
 
         tool_names = _tool_names(turns)
+        distinct_tools = len(set(tool_names))
         if (
             len(tool_names) < MIN_TOOL_CALLS
-            or len(set(tool_names)) < MIN_DISTINCT_TOOLS
+            or distinct_tools < MIN_DISTINCT_TOOLS
         ):
+            self.last_reason = (
+                f"Trigger not met: {len(tool_names)} tool calls and "
+                f"{distinct_tools} distinct tools; requires at least "
+                f"{MIN_TOOL_CALLS} and {MIN_DISTINCT_TOOLS}."
+            )
             return None
 
         try:
             skill = self._generate(turns, tool_names)
-            return self._save(skill) if skill else None
-        except Exception:
+            if not skill:
+                self.last_reason = (
+                    "The summarizer found no new broadly reusable procedure."
+                )
+                return None
+
+            learned = self._save(skill)
+            if not learned:
+                self.last_reason = f"Skill '{skill['name']}' already exists."
+                return None
+
+            self.last_reason = "Skill created."
+            return learned
+        except Exception as error:
+            logger.exception("Skill generation failed")
+            detail = " ".join(str(error).split()) or type(error).__name__
+            self.last_reason = f"Skill generation failed: {detail[:300]}"
             return None
 
     def _generate(
@@ -161,7 +186,8 @@ def _validate_skill(
     data: dict[str, Any],
     tool_names: list[str],
 ) -> dict[str, Any]:
-    name = str(data.get("name") or "").strip()
+    raw_name = str(data.get("name") or "").strip().lower()
+    name = re.sub(r"[^a-z0-9]+", "-", raw_name).strip("-")
     description = " ".join(str(data.get("description") or "").split())
     steps = [" ".join(str(step).split()) for step in data.get("steps") or []]
     steps = [step for step in steps if step]

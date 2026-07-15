@@ -30,6 +30,9 @@ from agent.tools import tools_spec
 
 def agent_logic(
     user_message: str,
+    llm_chat: list[dict[str, Any]] | None = None,
+    l3_memory: dict[str, Any] | None = None,
+    agent_session: dict[str, Any] | None = None,
     error_text: str = "",
     on_think: Callable[[str], Any] | None = None,
     on_content: Callable[[str], Any] | None = None,
@@ -37,15 +40,18 @@ def agent_logic(
     on_tool: Callable[[dict[str, Any]], Any] | None = None,
     on_tool_call: Callable[[str, Any, str, str], Any] | None = None,
     on_end_message: Callable[[Any], Any] | None = None,
+    on_l3: Callable[[dict[str, Any]], Any] | None = None,
     on_start_message: Callable[[str], Any] | None = None,
 ) -> str:
-
-
     """Run one task and return the final assistant answer."""
     task = (user_message or "").strip()
     client, model_options = _build_client()
 
-    store = MemoryStore.open(DATA_DIR, L2_TOKEN_BUDGET)
+    store = MemoryStore.from_llm_chat(
+        llm_chat,
+        L2_TOKEN_BUDGET,
+        l3_memory=l3_memory,
+    )
     skill_manager = SkillManager.open(client, SUMMARIZER_MODEL, DATA_DIR / "skills", model_options)
     agent = build_agent(client)
     final = agent.stream(
@@ -56,6 +62,9 @@ def agent_logic(
                 "model_options": model_options,
                 "tools": tools_spec(),
                 "memory_store": store,
+                "external_history": llm_chat is not None,
+                "resume_task": bool(error_text),
+                "agent_session": agent_session or {},
                 "memory_context": ContextManager(
                     store,
                     recovery_notice=_rollback_notice(error_text),
@@ -70,6 +79,7 @@ def agent_logic(
                 "on_tool": on_tool,
                 "on_tool_call": on_tool_call,
                 "on_end_message": on_end_message,
+                "on_l3": on_l3,
                 "on_start_message": on_start_message,
             }
         )

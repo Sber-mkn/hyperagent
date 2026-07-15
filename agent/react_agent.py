@@ -9,7 +9,7 @@ from agent.llminterface.agent_graph.agent_graph import END, AgentGraph
 from agent.llminterface.client.llm_chat import LLMMessage
 from agent.llminterface.client.llm_client import LLMClient
 from agent.memory import Turn
-from agent.tools import execute_tool, tool_target, truncate_middle
+from agent.tools import execute_tool, tool_target, tools_spec, truncate_middle
 
 
 MAX_TOOL_RESULT_CHARS = 24_000
@@ -22,7 +22,9 @@ def build_agent(client: LLMClient) -> AgentGraph:
 
     def prepare_context(state) -> dict[str, Any]:
         store = state["memory_store"]
-        store.maybe_compress(state["memory_summarizer"].summarize)
+        l3_update = store.maybe_compress(state["memory_summarizer"].summarize)
+        if l3_update:
+            _emit(state.get("on_l3"), l3_update)
 
         data = state.to_dict()
         chat = state["memory_context"].build_chat()
@@ -38,14 +40,17 @@ def build_agent(client: LLMClient) -> AgentGraph:
 
     def call_model(state):
         options = dict(state.get("model_options") or {})
-        return client.stream(
+        content_chunks: list[str] = []
+        chat = client.stream(
             state["chat"],
             on_chunk_think=state.get("on_think"),
-            on_chunk_content=state.get("on_content"),
+            on_chunk_content=content_chunks.append,
             model=state["model"],
             tools=state["tools"],
             **options,
         )
+        state["candidate_content_chunks"] = content_chunks
+        return chat
 
     def record_assistant(state) -> None:
         message = state["chat"][-1]
@@ -73,7 +78,15 @@ def build_agent(client: LLMClient) -> AgentGraph:
 
     def start_node(state) -> dict[str, Any]:
         task = state["user_message"]
-        state["memory_store"].set_task(task)
+        appended = state["memory_store"].set_task(
+            task,
+            resume=state.get("resume_task", False),
+        )
+        if appended and state.get("external_history"):
+            _emit(
+                state.get("on_end_message"),
+                LLMMessage.from_message({"role": "user", "content": task}),
+            )
         _emit(state.get("on_title"), _title(task))
         return {
             "iterations": 0,
@@ -87,9 +100,10 @@ def build_agent(client: LLMClient) -> AgentGraph:
         return "tools" if state["chat"][-1].tool_calls else "review"
 
     def tool_node(state) -> dict[str, Any]:
+        refresh_tools = False
         for call in state["chat"][-1].tool_calls or []:
-            _run_tool(state, call)
-        return {}
+            refresh_tools = _run_tool(state, call) or refresh_tools
+        return {"tools": tools_spec()} if refresh_tools else {}
 
     def route_tools(state):
         if state["iterations"] >= state["max_iterations"]:
@@ -98,10 +112,12 @@ def build_agent(client: LLMClient) -> AgentGraph:
 
     def review_node(state) -> dict[str, Any]:
         message = state["chat"][-1]
+        store = state["memory_store"]
         review = state["completion_checker"].check(
             task=state["user_message"],
-            turns=state["memory_store"].current_exchange(),
+            turns=list(store.tail),
             candidate_answer=message.content or "",
+            summaries=list(store.summaries),
         )
         if review.completed:
             return {
@@ -142,10 +158,12 @@ def build_agent(client: LLMClient) -> AgentGraph:
         answer = (message.content or "").strip()
         _emit(state.get("on_end_message"), message)
         state["memory_store"].append(Turn(role="assistant", content=answer))
-        # Not re-emitted via on_content: it already streamed live chunk-by-chunk
-        # during call_model, since on_chunk_content is now wired to on_content.
+        chunks = state.get("candidate_content_chunks") or [answer]
+        for chunk in chunks:
+            _emit(state.get("on_content"), chunk)
 
-        learned_skill = state["skill_manager"].consider(
+        skill_manager = state["skill_manager"]
+        learned_skill = skill_manager.consider(
             state["memory_store"].current_exchange(),
             completion_verified=True,
         )
@@ -155,6 +173,12 @@ def build_agent(client: LLMClient) -> AgentGraph:
                 "\n\n[Skill created]\n"
                 f"Name: {learned_skill.name}\n"
                 f"Saved to: {learned_skill.path.as_posix()}",
+            )
+        else:
+            _emit(
+                state.get("on_content"),
+                "\n\n[Skill not created]\n"
+                f"Reason: {skill_manager.last_reason}",
             )
         return {"answer": answer}
 
@@ -172,6 +196,11 @@ def build_agent(client: LLMClient) -> AgentGraph:
                 f"step failed. Reason: {reason}\n\nNo skill was created."
             )
         state["memory_store"].append(Turn(role="assistant", content=answer))
+        if state.get("external_history"):
+            _emit(
+                state.get("on_end_message"),
+                LLMMessage.from_message({"role": "assistant", "content": answer}),
+            )
         _emit(state.get("on_content"), answer)
         return {"answer": answer}
 
@@ -200,7 +229,7 @@ def build_agent(client: LLMClient) -> AgentGraph:
     )
 
 
-def _run_tool(state, call: dict[str, Any]) -> None:
+def _run_tool(state, call: dict[str, Any]) -> bool:
     function = call.get("function") or {}
     name = function.get("name") or "unknown_tool"
     arguments = function.get("arguments") or "{}"
@@ -237,6 +266,12 @@ def _run_tool(state, call: dict[str, Any]) -> None:
             tool_call_id=call.get("id"),
         )
     )
+    if state.get("external_history"):
+        _emit(
+            state.get("on_end_message"),
+            LLMMessage.tool_result(name, result_text, call.get("id")),
+        )
+    return target == "server" and name == "create_tool"
 
 
 def _title(task: str) -> str:

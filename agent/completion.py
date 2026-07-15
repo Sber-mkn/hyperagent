@@ -32,6 +32,7 @@ class CompletionChecker:
         task: str,
         turns: list[Turn],
         candidate_answer: str,
+        summaries: list[str] | None = None,
     ) -> CompletionReview:
         trajectory = json.dumps(
             [turn.to_dict() for turn in turns],
@@ -49,14 +50,20 @@ class CompletionChecker:
                         "missing requested artifacts, failed tools, and unverified "
                         "results mean completed=false. Explanations and ordinary "
                         "conversation can be complete without tools when the user "
-                        "did not request an action or verification. If uncertain, "
-                        "return false."
+                        "did not request an action or verification. Treat facts "
+                        "stated by the user in the recorded conversation or memory "
+                        "summaries as valid evidence for recall questions. Preserve "
+                        "the user's meaning for labels such as code, name, or value; "
+                        "do not reinterpret them as requests for executable source "
+                        "code or additional artifacts. If uncertain, return false."
                     ),
                 },
                 {
                     "role": "user",
                     "content": (
                         f"Task:\n{task}\n\n"
+                        "Earlier memory summaries:\n"
+                        f"{json.dumps(summaries or [], ensure_ascii=False)}\n\n"
                         f"Recorded trajectory:\n{trajectory}\n\n"
                         f"Proposed final answer:\n{candidate_answer}"
                     ),

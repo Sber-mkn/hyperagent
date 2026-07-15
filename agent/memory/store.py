@@ -1,19 +1,15 @@
-"""Persistent L1-L3 memory for one agent session."""
+"""In-memory L1-L3 view built from supervisor-owned conversation history."""
 
 from __future__ import annotations
 
 import json
-import shutil
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Callable, Literal
 
-from agent.config import DATA_DIR, L2_TOKEN_BUDGET
+from agent.config import L2_TOKEN_BUDGET
 
 
 Role = Literal["user", "assistant", "tool"]
-FORMAT_VERSION = 2
 
 
 def estimate_tokens(text: str) -> int:
@@ -25,6 +21,7 @@ def estimate_tokens(text: str) -> int:
 class Turn:
     role: Role
     content: str = ""
+    message_id: int | None = None
     tool_name: str | None = None
     tool_call_id: str | None = None
     tool_calls: list[dict[str, Any]] | None = None
@@ -44,9 +41,32 @@ class Turn:
         return cls(
             role=data["role"],
             content=data.get("content", ""),
+            message_id=_message_id(data.get("id") or data.get("message_id")),
             tool_name=data.get("tool_name"),
             tool_call_id=data.get("tool_call_id"),
             tool_calls=data.get("tool_calls"),
+        )
+
+    @classmethod
+    def from_llm_message(cls, message: dict[str, Any]) -> "Turn | None":
+        role = message.get("role")
+        if role not in {"user", "assistant", "tool"}:
+            return None
+
+        content = str(message.get("content") or "")
+        tool_name = message.get("name") or message.get("tool_name")
+        if role == "tool" and not tool_name and content.startswith("["):
+            closing = content.find("]")
+            if closing > 1:
+                tool_name = content[1:closing]
+
+        return cls(
+            role=role,
+            content=content,
+            message_id=_message_id(message.get("id")),
+            tool_name=tool_name,
+            tool_call_id=message.get("tool_call_id"),
+            tool_calls=message.get("tool_calls"),
         )
 
     def context_text(self) -> str:
@@ -56,67 +76,55 @@ class Turn:
 
 @dataclass
 class MemoryStore:
-    data_dir: Path
     l2_token_budget: int = L2_TOKEN_BUDGET
     tail: list[Turn] = field(default_factory=list)
     summaries: list[str] = field(default_factory=list)
+    last_compressed_message_id: int | None = None
     current_task: str = ""
 
-    @property
-    def log_path(self) -> Path:
-        return self.data_dir / "logs" / "chat.jsonl"
-
-    @property
-    def blocks_path(self) -> Path:
-        return self.data_dir / "memory" / "dialogue_blocks.json"
-
     @classmethod
-    def reset(cls, data_dir: Path = DATA_DIR) -> None:
-        if data_dir.exists():
-            shutil.rmtree(data_dir)
-
-    @classmethod
-    def open(
+    def from_llm_chat(
         cls,
-        data_dir: Path = DATA_DIR,
+        messages: list[dict[str, Any]] | None,
         l2_token_budget: int = L2_TOKEN_BUDGET,
+        l3_memory: dict[str, Any] | None = None,
     ) -> "MemoryStore":
-        store = cls(Path(data_dir), l2_token_budget)
-        store._ensure_layout()
-        store._load()
-        return store
+        history = list(messages or [])
+        if history and all(message.get("dt") for message in history):
+            history.sort(key=lambda message: str(message["dt"]))
 
-    def _ensure_layout(self) -> None:
-        self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        self.blocks_path.parent.mkdir(parents=True, exist_ok=True)
+        summary = str((l3_memory or {}).get("summary") or "").strip()
+        watermark = _message_id((l3_memory or {}).get("last_message_id"))
+        if summary and watermark is not None:
+            history = [
+                message
+                for message in history
+                if (message_id := _message_id(message.get("id"))) is None
+                or message_id > watermark
+            ]
 
-    def _load(self) -> None:
-        if not self.blocks_path.exists():
-            return
-        data = json.loads(self.blocks_path.read_text(encoding="utf-8"))
-        self.summaries = list(data.get("summaries", []))
-        if data.get("version") == FORMAT_VERSION:
-            self.tail = [Turn.from_dict(item) for item in data.get("tail", [])]
-
-    def _save(self) -> None:
-        data = {
-            "version": FORMAT_VERSION,
-            "tail": [turn.to_dict() for turn in self.tail],
-            "summaries": self.summaries,
-        }
-        self.blocks_path.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        turns = [Turn.from_llm_message(message) for message in history]
+        return cls(
+            l2_token_budget=l2_token_budget,
+            tail=[turn for turn in turns if turn is not None],
+            summaries=[summary] if summary else [],
+            last_compressed_message_id=watermark if summary else None,
         )
 
-    def set_task(self, task: str) -> None:
+    def set_task(self, task: str, resume: bool = False) -> bool:
         self.current_task = task.strip()
+        if resume:
+            latest_user = next(
+                (turn for turn in reversed(self.tail) if turn.role == "user"),
+                None,
+            )
+            if latest_user and latest_user.content.strip() == self.current_task:
+                return False
         self.append(Turn(role="user", content=self.current_task))
+        return True
 
     def append(self, turn: Turn) -> None:
         self.tail.append(turn)
-        self._append_log(turn)
-        self._save()
 
     def tail_tokens(self) -> int:
         return sum(estimate_tokens(turn.context_text()) for turn in self.tail)
@@ -132,7 +140,10 @@ class MemoryStore:
                 return index
         return len(self.tail)
 
-    def maybe_compress(self, summarize: Callable[[list[Turn]], str]) -> bool:
+    def maybe_compress(
+        self,
+        summarize: Callable[[list[Turn]], str],
+    ) -> dict[str, Any] | None:
         changed = False
         while self.tail and self.tail_tokens() > self.l2_token_budget:
             segment = self._compression_segment()
@@ -144,13 +155,23 @@ class MemoryStore:
             if not summary:
                 break
 
+            message_ids = [
+                turn.message_id
+                for turn in self.tail[start:end]
+                if turn.message_id is not None
+            ]
+            if message_ids:
+                self.last_compressed_message_id = max(message_ids)
             self.summaries.append(summary)
             del self.tail[start:end]
             changed = True
 
-        if changed:
-            self._save()
-        return changed
+        if not changed or self.last_compressed_message_id is None:
+            return None
+        return {
+            "summary": "\n\n".join(self.summaries),
+            "last_message_id": self.last_compressed_message_id,
+        }
 
     def _compression_segment(self) -> tuple[int, int] | None:
         """Choose an old complete exchange without orphaning tool messages."""
@@ -164,19 +185,11 @@ class MemoryStore:
             if compressible[index].role == "user":
                 return 0, index
 
-        start = 1 if compressible and compressible[0].role == "user" else 0
-        if start >= len(compressible):
-            return None
+        return 0, len(compressible)
 
-        end = start + 1
-        while end < len(compressible) and compressible[end].role == "tool":
-            end += 1
-        return start, end
 
-    def _append_log(self, turn: Turn) -> None:
-        record = {
-            "ts": datetime.now(timezone.utc).isoformat(),
-            **turn.to_dict(),
-        }
-        with self.log_path.open("a", encoding="utf-8") as file:
-            file.write(json.dumps(record, ensure_ascii=False) + "\n")
+def _message_id(value: Any) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None

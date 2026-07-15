@@ -66,5 +66,7 @@ class ContextManager:
             "Use tools to complete and verify the task. "
             "When a task may match a learned reusable procedure, call skills_list "
             "and then load the relevant instructions with skill_view before acting. "
+            "Skill learning runs automatically after verified finalization. Never "
+            "create or modify Python files under agent/skills manually. "
             "When finished, answer plainly without another tool call."
         )

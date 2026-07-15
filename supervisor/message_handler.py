@@ -54,13 +54,15 @@ def git_handler(message: dict, git_service: GitService) -> dict | None:
     elif isinstance(command, GitCommitCommand):
         compile_error = git_service.compile_python_files()
         if compile_error:
-            return {"ok": False, "error": compile_error}
+            return {"error": compile_error}
 
         mark_pending_snapshot_stable()
         git_service.add()
-        git_service.commit(command.message)
-        return {"restart_agent": True}
+        if git_service.commit(command.message):
+            return {"restart_agent": True}
+        else:
+            return {"error": "no changes to commit"}
     elif isinstance(command, GitRollbackCommand):
         result = git_service.rollback(command.target_sha)
 
-    return {"ok": True, "stdout": result}
+    return {"stdout": result}
