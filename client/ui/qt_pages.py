@@ -601,15 +601,23 @@ class ChatPage(QWidget):
     def _on_models_fetched(self, provider: str, models: list[str]) -> None:
         self._fetched_providers.add(provider)
         self._available_models[provider] = models
-        if not self._model_by_provider.get(provider) and models:
-            self._model_by_provider[provider] = models[0]
-            # Only announce the auto-picked default if this fetch is still for
-            # the provider actually active right now. A background fetch
-            # started before a provider switch can resolve after the user has
+        previous_choice = self._model_by_provider.get(provider) or ""
+        # A saved choice that this provider's server no longer offers (or
+        # was auto-picked earlier against the wrong server, e.g. Local
+        # Ollama borrowing Hyper's list before that was fixed) must not keep
+        # displaying as if it were still selected.
+        resolved_choice = previous_choice if previous_choice in models else ""
+        if not resolved_choice and models:
+            resolved_choice = models[0]
+        self._model_by_provider[provider] = resolved_choice
+        if resolved_choice != previous_choice:
+            # Only announce the change if this fetch is still for the
+            # provider actually active right now. A background fetch started
+            # before a provider switch can resolve after the user has
             # already moved on; letting it emit unconditionally would push
             # settings["model"] back to the stale provider it was fetched for.
             if provider == self._current_provider:
-                self.model_choice_selected.emit(provider, models[0])
+                self.model_choice_selected.emit(provider, resolved_choice)
         if provider == self._current_provider:
             self._update_model_button()
 
