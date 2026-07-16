@@ -293,9 +293,9 @@ def run_powershell(command: str, timeout: int = 60, limit: int = 4000) -> str:
     return truncate_middle(out, min(limit, MAX_LIMIT_CHARS))
 
 
-@tool
+@tool(default_target="client")
 def run_python(code: str, timeout: int = 60, limit: int = 4000) -> str:
-    """Выполнить Python-код и вернуть стандартный вывод.
+    """Выполнить Python-код на машине пользователя и вернуть стандартный вывод.
 
     Args:
         code: исходный код на Python.
