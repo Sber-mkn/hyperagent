@@ -117,6 +117,17 @@ def _build_schema(
     return {"type": "object", "properties": props, "required": required}
 
 
+_TARGET_NOTE = {
+    "server": "[Выполняется на сервере, в контейнере агента.]",
+    "client": "[Выполняется на компьютере пользователя, запустившего клиент.]",
+}
+
+
+def _describe_target(description: str, default_target: str) -> str:
+    note = _TARGET_NOTE.get(default_target, f"[Выполняется на: {default_target}.]")
+    return f"{description} {note}".strip()
+
+
 def tool(_func: Optional[Callable] = None, *,
          name: Optional[str] = None,
          description: Optional[str] = None,
@@ -125,12 +136,14 @@ def tool(_func: Optional[Callable] = None, *,
     """Декоратор. Использование: @tool (всё берётся из docstring) либо
     @tool(name=..., description=..., parameters=..., default_target=...) для явного переопределения.
     default_target фиксирует, где инструмент ВСЕГДА выполняется — 'server' (в контейнере агента) или
-    'client' (на машине пользователя, запустившей клиент); модель этот выбор изменить не может."""
+    'client' (на машине пользователя, запустившей клиент); модель этот выбор изменить не может.
+    Это же место (server/client) автоматически дописывается в конец description, которое видит модель,
+    так что описание одиночного инструмента не может разойтись с тем, где он реально выполняется."""
     def deco(func: Callable[..., Any]) -> Callable[..., Any]:
         doc_summary, param_docs = _parse_docstring(func.__doc__)
         t = Tool(
             name=name or func.__name__,
-            description=description or doc_summary,
+            description=_describe_target(description or doc_summary, default_target),
             func=func,
             parameters=parameters or _build_schema(func, param_docs, default_target),
             default_target=default_target,
