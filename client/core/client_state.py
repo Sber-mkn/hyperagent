@@ -17,6 +17,7 @@ DEFAULT_SETTINGS = {
     "openrouter_api_key": "",
     "openrouter_model": "",
     "ollama_url": "",
+    "ollama_model": "",
     "theme": "dark",
     "access": ACCESS_ASK,
 }

@@ -223,7 +223,7 @@ class ChatController:
             agent_type = "ollama"
             agent_config = {
                 "OLLAMA_URL": settings["ollama_url"],
-                "AGENT_MODEL": "ollama",
+                "AGENT_MODEL": settings.get("ollama_model") or "auto",
             }
 
         access = settings.get("access") or ACCESS_ASK
