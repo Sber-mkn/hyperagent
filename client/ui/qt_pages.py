@@ -568,7 +568,13 @@ class ChatPage(QWidget):
 
     def _refresh_available_models(self, provider: str) -> None:
         if provider == MODEL_OLLAMA:
-            url = self._provider_context.get("ollama_url") or HYPER_OLLAMA_URL
+            url = self._provider_context.get("ollama_url") or ""
+            if not url:
+                # Local Ollama has no server configured yet — do not silently
+                # borrow Hyper's URL, or the two providers would show the
+                # exact same model list and look like switching did nothing.
+                self._models_fetched.emit(provider, [])
+                return
 
             def fetch_fn() -> list[str]:
                 return fetch_ollama_models(url)
