@@ -108,7 +108,8 @@ def _build_client(
     provider = AGENT_TYPE_TO_PROVIDER.get(agent_type, LLM_PROVIDER)
 
     if provider == "ollama":
-        url = agent_config.get("OLLAMA_URL") or OLLAMA_URL
+        client_url = agent_config.get("OLLAMA_URL")
+        url = _ollama_chat_url(client_url) if client_url else OLLAMA_URL
         return OllamaClient(url=url), {
             "num_ctx": AGENT_NUM_CTX,
             "num_predict": MAX_OUTPUT_TOKENS,
@@ -125,6 +126,18 @@ def _build_client(
             {"max_tokens": MAX_OUTPUT_TOKENS},
         )
     raise ValueError(f"Unsupported LLM_PROVIDER: {provider}")
+
+
+def _ollama_chat_url(base_url: str) -> str:
+    """The client stores a bare Ollama base URL (it uses that directly to list
+    /api/tags from the host). The agent runs inside Docker though, so a
+    "localhost"/"127.0.0.1" address the user typed on their host machine has
+    to be translated to the container-reachable host.docker.internal, and the
+    /api/chat path (which OllamaClient posts to verbatim) has to be appended."""
+    normalized = base_url.strip().rstrip("/")
+    for loopback_host in ("localhost", "127.0.0.1"):
+        normalized = normalized.replace(f"://{loopback_host}", "://host.docker.internal")
+    return normalized + "/api/chat"
 
 
 def _rollback_notice(error_text: str) -> str:
