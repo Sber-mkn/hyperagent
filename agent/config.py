@@ -32,7 +32,7 @@ OPENAI_BASE_URL = os.getenv("OPENROUTER_BASE_URL") or os.getenv(
     "OPENAI_BASE_URL", "https://api.openai.com/v1"
 )
 OPENAI_API_KEY = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-AGENT_MODEL = os.getenv("AGENT_MODEL", "ornith:9b")
+AGENT_MODEL = os.getenv("AGENT_MODEL", "ornith:35b")
 SUMMARIZER_MODEL = os.getenv("SUMMARIZER_MODEL", AGENT_MODEL)
 
 L2_TOKEN_BUDGET = int(os.getenv("V3_L2_TOKEN_BUDGET", "15000"))
