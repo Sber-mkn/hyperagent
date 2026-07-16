@@ -277,7 +277,7 @@ class SettingsPage(QWidget):
         self.theme_group = QButtonGroup(self)
         self.local_radio = QRadioButton("Hyper")
         self.openrouter_radio = QRadioButton("OpenRouter")
-        self.ollama_radio = QRadioButton("Local Ollama")
+        self.ollama_radio = QRadioButton("Ollama")
         self.openai_radio = QRadioButton("OpenAI")
         self.openrouter_api_input = QLineEdit()
         self.ollama_url_input = QLineEdit()
@@ -420,7 +420,7 @@ class SettingsPage(QWidget):
 _PROVIDER_LABELS = {
     MODEL_LOCAL: "Hyper",
     MODEL_OPENROUTER: "OpenRouter",
-    MODEL_OLLAMA: "Local Ollama",
+    MODEL_OLLAMA: "Ollama",
     MODEL_OPENAI: "OpenAI",
 }
 
@@ -869,7 +869,7 @@ class ChatPage(QWidget):
         for label, value in (
             ("Hyper", MODEL_LOCAL),
             ("OpenRouter", MODEL_OPENROUTER),
-            ("Local Ollama", MODEL_OLLAMA),
+            ("Ollama", MODEL_OLLAMA),
             ("OpenAI", MODEL_OPENAI),
         ):
             action = QAction(label, self.provider_button)
