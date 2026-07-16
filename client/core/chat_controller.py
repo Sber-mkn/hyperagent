@@ -210,7 +210,7 @@ class ChatController:
         if model == MODEL_OPENROUTER:
             return bool(settings["openrouter_api_key"] and settings["openrouter_model"])
         if model == MODEL_OLLAMA:
-            return bool(settings["ollama_url"])
+            return bool(settings["ollama_url"] and settings["ollama_model"])
         return True
 
     def theme(self) -> str:

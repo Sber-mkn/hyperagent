@@ -116,7 +116,6 @@ class HyperagentClientWindow(QMainWindow):
         self.chat_page.create_chat_requested.connect(self._create_chat)
         self.chat_page.rename_chat_requested.connect(self._rename_chat)
         self.chat_page.settings_requested.connect(self._show_settings)
-        self.chat_page.model_selected.connect(self._select_model)
         self.chat_page.model_choice_selected.connect(self._select_model_choice)
         self.chat_page.access_selected.connect(self._select_access)
         self.chat_page.logout_requested.connect(self._logout)
@@ -214,13 +213,6 @@ class HyperagentClientWindow(QMainWindow):
         self._apply_settings_to_ui()
         self._return_from_settings()
 
-    def _select_model(self, model: str) -> None:
-        if not self.controller.model_configured(model):
-            self._show_settings(model)
-            return
-        self.controller.set_model(model)
-        self._apply_settings_to_ui()
-
     def _select_model_choice(self, model: str, model_name: str) -> None:
         self.controller.set_model_choice(model, model_name)
         if not self.controller.model_configured(model):
@@ -262,6 +254,11 @@ class HyperagentClientWindow(QMainWindow):
         self._open_chat(int(chat["id"]), str(chat["title"]))
 
     def _send_task(self, text: str, chat_id: int) -> None:
+        settings = self.controller.settings()
+        model = str(settings.get("model") or MODEL_LOCAL)
+        if not self.controller.model_configured(model):
+            self.chat_page.prompt_model_choice(model)
+            return
         if self.client is None:
             self.chat_page.append_status("Сервис временно недоступен.")
             self.chat_page.set_busy(False)
