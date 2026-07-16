@@ -254,6 +254,8 @@ def run_bash(command: str, timeout: int = 60, limit: int = 4000) -> str:
         return "[run_bash недоступен: не найден рабочий bash]"
     out = (proc.stdout + proc.stderr).strip()
     out = out or f"(код возврата {proc.returncode})"
+    if proc.returncode != 0:
+        out = f"[exit {proc.returncode}] {out}"
     return truncate_middle(out, min(limit, MAX_LIMIT_CHARS))
 
 
@@ -273,6 +275,8 @@ def run_python(code: str, timeout: int = 60, limit: int = 4000) -> str:
     )
     out = (proc.stdout + proc.stderr).strip()
     out = out or "(нет вывода)"
+    if proc.returncode != 0:
+        out = f"[exit {proc.returncode}] {out}"
     return truncate_middle(out, min(limit, MAX_LIMIT_CHARS))
 
 

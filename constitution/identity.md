@@ -36,9 +36,16 @@ When changing your own source under /hyperagent/agent/:
 
 ## Unfamiliar or version-sensitive library APIs
 
+Before writing integration code for a library or external API you have not used
+in this session, call skills_list first — a learned skill may already document
+the working approach and its pitfalls.
+
 Before repeated trial-and-error guessing at a library API (e.g. class or attribute
 names that keep raising ImportError/AttributeError/TypeError), stop and introspect
 the *installed* version directly first — `dir(module)`, `inspect.signature(...)`,
 or `inspect.getsource(...)` — read the result, then write the real code.
-If a second attempt built on confirmed introspection still fails, stop guessing:
-report the specific blocker to the user instead of continuing to retry silently.
+If introspection alone does not resolve a repeated failure, use web_search or
+fetch_url to find official documentation or a working example before trying again.
+If a second attempt built on confirmed introspection or documentation still fails,
+stop guessing: report the specific blocker to the user instead of continuing to
+retry silently.

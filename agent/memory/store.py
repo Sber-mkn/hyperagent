@@ -21,6 +21,7 @@ def estimate_tokens(text: str) -> int:
 class Turn:
     role: Role
     content: str = ""
+    thinking: str = ""
     message_id: int | None = None
     tool_name: str | None = None
     tool_call_id: str | None = None
@@ -28,6 +29,8 @@ class Turn:
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {"role": self.role, "content": self.content}
+        if self.thinking:
+            data["thinking"] = self.thinking
         if self.tool_name:
             data["tool_name"] = self.tool_name
         if self.tool_call_id:
@@ -41,6 +44,7 @@ class Turn:
         return cls(
             role=data["role"],
             content=data.get("content", ""),
+            thinking=data.get("thinking", ""),
             message_id=_message_id(data.get("id") or data.get("message_id")),
             tool_name=data.get("tool_name"),
             tool_call_id=data.get("tool_call_id"),
@@ -63,6 +67,7 @@ class Turn:
         return cls(
             role=role,
             content=content,
+            thinking=str(message.get("thinking") or ""),
             message_id=_message_id(message.get("id")),
             tool_name=tool_name,
             tool_call_id=message.get("tool_call_id"),

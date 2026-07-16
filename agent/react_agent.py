@@ -15,6 +15,7 @@ from agent.tools import execute_tool, tool_target, tools_spec, truncate_middle
 MAX_TOOL_RESULT_CHARS = 24_000
 TOOL_PREVIEW_CHARS = 300
 MAX_COMPLETION_RETRIES = 2
+TOOL_FAILURE_NUDGE_THRESHOLD = 3
 
 
 def build_agent(client: LLMClient) -> AgentGraph:
@@ -60,6 +61,7 @@ def build_agent(client: LLMClient) -> AgentGraph:
                 Turn(
                     role="assistant",
                     content=message.content or "",
+                    thinking=message.thinking or "",
                     tool_calls=message.tool_calls,
                 )
             )
@@ -94,6 +96,8 @@ def build_agent(client: LLMClient) -> AgentGraph:
             "completion_feedback": "",
             "completion_verified": False,
             "review_available": True,
+            "consecutive_tool_failures": 0,
+            "last_tool_name": None,
         }
 
     def route_model(state):
@@ -101,9 +105,31 @@ def build_agent(client: LLMClient) -> AgentGraph:
 
     def tool_node(state) -> dict[str, Any]:
         refresh_tools = False
+        consecutive_failures = state.get("consecutive_tool_failures", 0)
+        last_tool_name = state.get("last_tool_name")
         for call in state["chat"][-1].tool_calls or []:
-            refresh_tools = _run_tool(state, call) or refresh_tools
-        return {"tools": tools_spec()} if refresh_tools else {}
+            refresh, name, failed = _run_tool(state, call)
+            refresh_tools = refresh or refresh_tools
+            if failed and name == last_tool_name:
+                consecutive_failures += 1
+            elif failed:
+                consecutive_failures = 1
+            else:
+                consecutive_failures = 0
+            last_tool_name = name
+
+        updates: dict[str, Any] = {"tools": tools_spec()} if refresh_tools else {}
+        updates["consecutive_tool_failures"] = consecutive_failures
+        updates["last_tool_name"] = last_tool_name
+        if consecutive_failures == TOOL_FAILURE_NUDGE_THRESHOLD:
+            updates["completion_feedback"] = (
+                f"The last {TOOL_FAILURE_NUDGE_THRESHOLD} attempts to use "
+                f"'{last_tool_name}' failed. Before trying again, call "
+                "skills_list to check for a relevant learned skill, or use web_search "
+                "/ fetch_url to find documentation or a working example. Do not keep "
+                "guessing blindly."
+            )
+        return updates
 
     def route_tools(state):
         if state["iterations"] >= state["max_iterations"]:
@@ -163,22 +189,26 @@ def build_agent(client: LLMClient) -> AgentGraph:
         message = state["candidate_message"]
         answer = (message.content or "").strip()
         _emit(state.get("on_end_message"), message)
-        state["memory_store"].append(Turn(role="assistant", content=answer))
+        state["memory_store"].append(
+            Turn(role="assistant", content=answer, thinking=message.thinking or "")
+        )
         chunks = state.get("candidate_content_chunks") or [answer]
         for chunk in chunks:
             _emit(state.get("on_content"), chunk)
 
         skill_manager = state["skill_manager"]
-        learned_skill = skill_manager.consider(
+        learned_skills = skill_manager.consider(
             state["memory_store"].current_exchange(),
             completion_verified=True,
         )
-        if learned_skill:
+        if learned_skills:
+            details = "\n".join(
+                f"Name: {skill.name}\nSaved to: {skill.path.as_posix()}"
+                for skill in learned_skills
+            )
             _emit(
                 state.get("on_content"),
-                "\n\n[Skill created]\n"
-                f"Name: {learned_skill.name}\n"
-                f"Saved to: {learned_skill.path.as_posix()}",
+                f"\n\n[Skill{'s' if len(learned_skills) > 1 else ''} created]\n{details}",
             )
         else:
             _emit(
@@ -231,7 +261,7 @@ def build_agent(client: LLMClient) -> AgentGraph:
     )
 
 
-def _run_tool(state, call: dict[str, Any]) -> bool:
+def _run_tool(state, call: dict[str, Any]) -> tuple[bool, str, bool]:
     function = call.get("function") or {}
     name = function.get("name") or "unknown_tool"
     arguments = function.get("arguments") or "{}"
@@ -253,6 +283,8 @@ def _run_tool(state, call: dict[str, Any]) -> bool:
         _, result = execute_tool(call)
 
     result_text = truncate_middle(str(result), MAX_TOOL_RESULT_CHARS)
+    failed = result_text.startswith("[ошибка инструмента") or result_text.startswith("[exit ")
+
     _emit(
         state.get("on_tool_call"),
         name,
@@ -273,7 +305,7 @@ def _run_tool(state, call: dict[str, Any]) -> bool:
             state.get("on_end_message"),
             LLMMessage.tool_result(name, result_text, call.get("id")),
         )
-    return target == "server" and name == "create_tool"
+    return target == "server" and name == "create_tool", name, failed
 
 
 def _title(task: str) -> str:
