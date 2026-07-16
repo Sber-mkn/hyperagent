@@ -6,6 +6,13 @@ from database.agent.crud import add_l3_memory, add_message
 
 SUPERVISOR_ROUTING_KEY = "supervisor"
 CLIENT_ROUTING_KEY = "client"
+DEFAULT_CLIENT_TIMEOUT = 60
+# ask_user waits on a human typing an answer, not a quick client-side
+# operation — the default timeout was firing while the user was still
+# reading/typing, which aborted the task and rolled the conversation
+# back to before the question was asked.
+HUMAN_INPUT_TOOLS = {"ask_user"}
+HUMAN_INPUT_TIMEOUT = 900
 
 
 def on_command(command: dict) -> dict:
@@ -16,7 +23,9 @@ def on_command(command: dict) -> dict:
         command["chat_id"] = rabbitmq.chat_id
         return rabbitmq.request_response(command, routing_key=SUPERVISOR_ROUTING_KEY)
     elif command_type == "client_command":
-        return rabbitmq.request_response(command, routing_key=CLIENT_ROUTING_KEY)
+        tool_name = (command.get("command") or {}).get("name")
+        timeout = HUMAN_INPUT_TIMEOUT if tool_name in HUMAN_INPUT_TOOLS else DEFAULT_CLIENT_TIMEOUT
+        return rabbitmq.request_response(command, routing_key=CLIENT_ROUTING_KEY, timeout=timeout)
     else:
         return {"error": f"Unknown command type: {command_type}"}
 

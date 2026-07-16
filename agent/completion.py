@@ -89,21 +89,25 @@ class CompletionChecker:
             ]
         )
 
-        try:
-            response = self.client.send(chat, model=self.model, temperature=0, **self.options)
-            data = _parse_json(response[-1].content or "")
-            completed = data.get("completed") is True
-            reason = " ".join(str(data.get("reason") or "").split())
-            fix = " ".join(str(data.get("fix") or "").split())
-            if not reason:
-                raise ValueError("Completion review did not provide a reason")
-            return CompletionReview(completed=completed, reason=reason, fix=fix)
-        except Exception as error:
-            return CompletionReview(
-                completed=False,
-                reason=f"Completion verification failed: {error}",
-                available=False,
-            )
+        last_error: Exception | None = None
+        for _attempt in range(2):
+            try:
+                response = self.client.send(chat, model=self.model, temperature=0, **self.options)
+                data = _parse_json(response[-1].content or "")
+                completed = data.get("completed") is True
+                reason = " ".join(str(data.get("reason") or "").split())
+                fix = " ".join(str(data.get("fix") or "").split())
+                if not reason:
+                    raise ValueError("Completion review did not provide a reason")
+                return CompletionReview(completed=completed, reason=reason, fix=fix)
+            except Exception as error:
+                last_error = error
+
+        return CompletionReview(
+            completed=False,
+            reason=f"Completion verification failed: {last_error}",
+            available=False,
+        )
 
 
 def _parse_json(text: str) -> dict:
