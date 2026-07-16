@@ -7,6 +7,8 @@ from client.core.client_state import (
     ACCESS_READ_ONLY,
     DEFAULT_AGENT_CONFIG,
     DEFAULT_AGENT_TYPE,
+    HYPER_OLLAMA_URL,
+    MODEL_LOCAL,
     MODEL_OLLAMA,
     MODEL_OPENROUTER,
     NEW_CHAT_TITLE,
@@ -198,6 +200,8 @@ class ChatController:
             settings["openrouter_model"] = model_name
         elif model == MODEL_OLLAMA:
             settings["ollama_model"] = model_name
+        elif model == MODEL_LOCAL:
+            settings["local_model"] = model_name
         self.save_settings(settings)
 
     def set_access(self, access: str) -> None:
@@ -205,13 +209,30 @@ class ChatController:
         settings["access"] = access
         self.save_settings(settings)
 
+    def provider_configured(self, model: str) -> bool:
+        """Whether the provider's connection details are set — the bar for
+        switching to it in chat. Not switch to Settings does not require a
+        model to already be picked; that's the model selector's own job."""
+        settings = self.settings()
+        if model == MODEL_OPENROUTER:
+            return bool(settings["openrouter_api_key"])
+        if model == MODEL_OLLAMA:
+            return bool(settings["ollama_url"])
+        return True
+
     def model_configured(self, model: str) -> bool:
+        """Whether a task can actually be sent on this provider right now."""
         settings = self.settings()
         if model == MODEL_OPENROUTER:
             return bool(settings["openrouter_api_key"] and settings["openrouter_model"])
         if model == MODEL_OLLAMA:
             return bool(settings["ollama_url"] and settings["ollama_model"])
         return True
+
+    def model_fetch_url(self, model: str) -> str:
+        if model == MODEL_OLLAMA:
+            return str(self.settings().get("ollama_url") or "")
+        return HYPER_OLLAMA_URL
 
     def theme(self) -> str:
         return str(self.settings()["theme"])
@@ -220,7 +241,7 @@ class ChatController:
         settings = self.settings()
         model = settings["model"]
         agent_type = DEFAULT_AGENT_TYPE
-        agent_config = dict(DEFAULT_AGENT_CONFIG)
+        agent_config = {**DEFAULT_AGENT_CONFIG, "AGENT_MODEL": settings.get("local_model") or "auto"}
 
         if model == MODEL_OPENROUTER:
             agent_type = "api"

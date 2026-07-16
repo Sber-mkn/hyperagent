@@ -9,11 +9,18 @@ NEW_CHAT_TITLE = "New Chat"
 MODEL_LOCAL = "local"
 MODEL_OPENROUTER = "openrouter"
 MODEL_OLLAMA = "ollama"
+# The zero-config default provider ("Server model") is user-facing as "Hyper".
+# It talks to the same Ollama instance the agent container itself defaults to
+# (reachable from the client host at this fixed address), so its model list
+# can be fetched the same way as a user-supplied Ollama URL, just without a
+# URL field to configure.
+HYPER_OLLAMA_URL = "http://localhost:11434"
 ACCESS_READ_ONLY = "read_only"
 ACCESS_ASK = "ask"
 ACCESS_FULL = "full_access"
 DEFAULT_SETTINGS = {
     "model": MODEL_LOCAL,
+    "local_model": "",
     "openrouter_api_key": "",
     "openrouter_model": "",
     "ollama_url": "",

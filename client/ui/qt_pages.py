@@ -30,6 +30,7 @@ from client.core.client_state import (
     ACCESS_ASK,
     ACCESS_FULL,
     ACCESS_READ_ONLY,
+    HYPER_OLLAMA_URL,
     MODEL_LOCAL,
     MODEL_OLLAMA,
     MODEL_OPENROUTER,
@@ -269,7 +270,7 @@ class SettingsPage(QWidget):
         super().__init__()
         self.model_group = QButtonGroup(self)
         self.theme_group = QButtonGroup(self)
-        self.local_radio = QRadioButton("Server model")
+        self.local_radio = QRadioButton("Hyper")
         self.openrouter_radio = QRadioButton("OpenRouter")
         self.ollama_radio = QRadioButton("Local Ollama")
         self.openrouter_api_input = QLineEdit()
@@ -388,8 +389,16 @@ class SettingsPage(QWidget):
         }
 
 
+_PROVIDER_LABELS = {
+    MODEL_LOCAL: "Hyper",
+    MODEL_OPENROUTER: "OpenRouter",
+    MODEL_OLLAMA: "Local Ollama",
+}
+
+
 class ChatPage(QWidget):
     send_requested = pyqtSignal(str, int)
+    provider_selected = pyqtSignal(str)
     model_choice_selected = pyqtSignal(str, str)
     access_selected = pyqtSignal(str)
     back_requested = pyqtSignal()
@@ -397,8 +406,8 @@ class ChatPage(QWidget):
     rename_chat_requested = pyqtSignal(int, str)
     settings_requested = pyqtSignal()
     logout_requested = pyqtSignal()
-    _picker_fetched = pyqtSignal(str, list)
-    _picker_fetch_failed = pyqtSignal(str, str)
+    _models_fetched = pyqtSignal(str, list)
+    _models_fetch_failed = pyqtSignal(str, str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -410,14 +419,21 @@ class ChatPage(QWidget):
         self._current_content_text = ""
         self._current_response_model: str | None = None
         self._command_groups: dict[str, CommandGroupBlock] = {}
-        self._provider_context: dict[str, str] = {
-            "ollama_url": "",
-            "openrouter_api_key": "",
-            "openrouter_model": "",
-            "ollama_model": "",
+        self._current_provider = MODEL_LOCAL
+        self._provider_context: dict[str, str] = {"ollama_url": "", "openrouter_api_key": ""}
+        self._model_by_provider: dict[str, str] = {
+            MODEL_LOCAL: "",
+            MODEL_OPENROUTER: "",
+            MODEL_OLLAMA: "",
         }
-        self._picker_fetched.connect(self._on_picker_fetched)
-        self._picker_fetch_failed.connect(self._on_picker_fetch_failed)
+        self._available_models: dict[str, list[str]] = {
+            MODEL_LOCAL: [],
+            MODEL_OPENROUTER: [],
+            MODEL_OLLAMA: [],
+        }
+        self._fetched_providers: set[str] = set()
+        self._models_fetched.connect(self._on_models_fetched)
+        self._models_fetch_failed.connect(self._on_models_fetch_failed)
         self._waiting_visible = False
 
         self.title_label = QLabel("Кодобольный AI")
@@ -426,6 +442,7 @@ class ChatPage(QWidget):
         self.output_layout = QVBoxLayout(self.output_widget)
         self.input = PromptTextEdit()
         self.access_button = QToolButton()
+        self.provider_button = QToolButton()
         self.model_button = QToolButton()
         self.send_button = PaperPlaneButton()
         self.back_button = QPushButton("Chats")
@@ -470,39 +487,52 @@ class ChatPage(QWidget):
             self._provider_context = {
                 "ollama_url": str(settings.get("ollama_url") or ""),
                 "openrouter_api_key": str(settings.get("openrouter_api_key") or ""),
-                "openrouter_model": str(settings.get("openrouter_model") or ""),
-                "ollama_model": str(settings.get("ollama_model") or ""),
             }
-        labels = {
-            MODEL_LOCAL: "Server model",
-            MODEL_OPENROUTER: "OpenRouter",
-            MODEL_OLLAMA: "Local Ollama",
-        }
-        label = labels.get(model, "Server model")
-        model_name = ""
-        if model == MODEL_OPENROUTER:
-            model_name = self._provider_context.get("openrouter_model", "")
-        elif model == MODEL_OLLAMA:
-            model_name = self._provider_context.get("ollama_model", "")
-        self.model_button.setText(f"{label} · {model_name}" if model_name else label)
-        self._rebuild_model_menu(model)
+            self._model_by_provider = {
+                MODEL_LOCAL: str(settings.get("local_model") or ""),
+                MODEL_OPENROUTER: str(settings.get("openrouter_model") or ""),
+                MODEL_OLLAMA: str(settings.get("ollama_model") or ""),
+            }
+        provider_changed = model != self._current_provider
+        self._current_provider = model
+        self.provider_button.setText(_PROVIDER_LABELS.get(model, "Hyper"))
+        self._update_model_button()
+        if provider_changed or model not in self._fetched_providers:
+            self._refresh_available_models(model)
 
-    def _rebuild_model_menu(self, provider: str) -> None:
-        # The provider itself is chosen in Settings, not here — this menu only
-        # ever lets you pick which model to use for whichever provider is
-        # already active. "Server model" has no user-visible model list to
-        # choose from, so there's nothing to open.
-        if provider not in (MODEL_OPENROUTER, MODEL_OLLAMA):
-            self.model_button.setMenu(None)
-            self.model_button.setEnabled(False)
-            return
-        self.model_button.setEnabled(True)
+    def _update_model_button(self) -> None:
+        provider = self._current_provider
+        model_name = self._model_by_provider.get(provider, "")
+        if model_name:
+            self.model_button.setText(model_name)
+        elif provider in self._fetched_providers:
+            self.model_button.setText("No models")
+        else:
+            self.model_button.setText("Loading…")
+        self._rebuild_model_menu()
+
+    def _rebuild_model_menu(self) -> None:
+        provider = self._current_provider
         menu = QMenu(self.model_button)
-        pick_action = QAction("Choose from available models…", menu)
-        pick_action.triggered.connect(
-            lambda checked=False, p=provider: self._open_model_picker(p)
+        models = self._available_models.get(provider, [])
+        if models:
+            for name in models:
+                action = QAction(name, menu)
+                action.triggered.connect(
+                    lambda checked=False, p=provider, n=name: self.model_choice_selected.emit(p, n)
+                )
+                menu.addAction(action)
+            menu.addSeparator()
+        else:
+            empty_action = QAction("No models found", menu)
+            empty_action.setEnabled(False)
+            menu.addAction(empty_action)
+            menu.addSeparator()
+        refresh_action = QAction("Refresh models", menu)
+        refresh_action.triggered.connect(
+            lambda checked=False, p=provider: self._refresh_available_models(p)
         )
-        menu.addAction(pick_action)
+        menu.addAction(refresh_action)
         manual_action = QAction("Enter model name…", menu)
         manual_action.triggered.connect(
             lambda checked=False, p=provider: self._open_model_manual(p)
@@ -511,10 +541,8 @@ class ChatPage(QWidget):
         self.model_button.setMenu(menu)
 
     def prompt_model_choice(self, provider: str) -> None:
-        if provider not in (MODEL_OPENROUTER, MODEL_OLLAMA):
-            return
         QMessageBox.information(self, "Choose a model", "Pick a model before sending a task.")
-        self._open_model_picker(provider)
+        self._refresh_available_models(provider)
 
     def set_access(self, access: str) -> None:
         labels = {
@@ -524,52 +552,54 @@ class ChatPage(QWidget):
         }
         self.access_button.setText(f"{labels.get(access, 'Ask')}")
 
-    def _model_key(self, provider: str) -> str:
-        return "openrouter_model" if provider == MODEL_OPENROUTER else "ollama_model"
-
     def _open_model_manual(self, provider: str) -> None:
-        current = self._provider_context.get(self._model_key(provider), "")
+        current = self._model_by_provider.get(provider, "")
         name, accepted = QInputDialog.getText(self, "Model name", "Model:", text=current)
         name = name.strip()
         if accepted and name:
             self.model_choice_selected.emit(provider, name)
 
-    def _open_model_picker(self, provider: str) -> None:
+    def _refresh_available_models(self, provider: str) -> None:
         if provider == MODEL_OLLAMA:
-            url = self._provider_context.get("ollama_url") or "http://localhost:11434"
+            url = self._provider_context.get("ollama_url") or HYPER_OLLAMA_URL
 
             def fetch_fn() -> list[str]:
                 return fetch_ollama_models(url)
-        else:
+        elif provider == MODEL_OPENROUTER:
             api_key = self._provider_context.get("openrouter_api_key") or ""
 
             def fetch_fn() -> list[str]:
                 return fetch_openrouter_models(api_key)
+        else:
+
+            def fetch_fn() -> list[str]:
+                return fetch_ollama_models(HYPER_OLLAMA_URL)
 
         def worker() -> None:
             try:
                 models = fetch_fn()
             except Exception as exc:
-                self._picker_fetch_failed.emit(provider, str(exc))
+                self._models_fetch_failed.emit(provider, str(exc))
             else:
-                self._picker_fetched.emit(provider, models)
+                self._models_fetched.emit(provider, models)
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _on_picker_fetched(self, provider: str, models: list[str]) -> None:
-        if not models:
-            QMessageBox.information(self, "No models found", "The provider returned no models.")
-            return
-        current = self._provider_context.get(self._model_key(provider), "")
-        start_index = models.index(current) if current in models else 0
-        name, accepted = QInputDialog.getItem(
-            self, "Choose model", "Model:", models, start_index, editable=False
-        )
-        if accepted and name:
-            self.model_choice_selected.emit(provider, name)
+    def _on_models_fetched(self, provider: str, models: list[str]) -> None:
+        self._fetched_providers.add(provider)
+        self._available_models[provider] = models
+        if not self._model_by_provider.get(provider) and models:
+            self._model_by_provider[provider] = models[0]
+            self.model_choice_selected.emit(provider, models[0])
+        if provider == self._current_provider:
+            self._update_model_button()
 
-    def _on_picker_fetch_failed(self, provider: str, error: str) -> None:
-        QMessageBox.warning(self, "Could not fetch models", error)
+    def _on_models_fetch_failed(self, provider: str, error: str) -> None:
+        self._fetched_providers.add(provider)
+        self._available_models[provider] = []
+        if provider == self._current_provider:
+            self._update_model_button()
+            self.model_button.setToolTip(error)
 
     def set_busy(self, busy: bool) -> None:
         self.input.setDisabled(busy)
@@ -757,10 +787,25 @@ class ChatPage(QWidget):
             access_menu.addAction(action)
         self.access_button.setMenu(access_menu)
 
+        self.provider_button.setObjectName("selectorButton")
+        self.provider_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.provider_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        provider_menu = QMenu(self.provider_button)
+        for label, value in (
+            ("Hyper", MODEL_LOCAL),
+            ("OpenRouter", MODEL_OPENROUTER),
+            ("Local Ollama", MODEL_OLLAMA),
+        ):
+            action = QAction(label, self.provider_button)
+            action.triggered.connect(
+                lambda checked=False, item=value: self.provider_selected.emit(item)
+            )
+            provider_menu.addAction(action)
+        self.provider_button.setMenu(provider_menu)
+
         self.model_button.setObjectName("selectorButton")
         self.model_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.model_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.model_button.setEnabled(False)
 
         self.send_button.setFixedSize(38, 38)
         self.send_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -768,6 +813,7 @@ class ChatPage(QWidget):
 
         input_layout.addWidget(self.input, 1)
         input_layout.addWidget(self.access_button, 0, Qt.AlignmentFlag.AlignBottom)
+        input_layout.addWidget(self.provider_button, 0, Qt.AlignmentFlag.AlignBottom)
         input_layout.addWidget(self.model_button, 0, Qt.AlignmentFlag.AlignBottom)
         input_layout.addWidget(self.send_button, 0, Qt.AlignmentFlag.AlignBottom)
 
