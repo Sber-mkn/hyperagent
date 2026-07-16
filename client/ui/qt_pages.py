@@ -691,7 +691,7 @@ class ChatPage(QWidget):
         self._close_active_command_group()
         self._reset_stream_state()
         answer = message.get("answer") or message.get("result") or message.get("summary") or message
-        self._append_text_block(f"Result: {answer}", "resultMessage")
+        self._append_text_block(f"Result: {answer}", "resultMessage", markdown=True)
 
     def append_status(self, message: str) -> None:
         self._close_active_think()
@@ -774,7 +774,9 @@ class ChatPage(QWidget):
 
         if kind == "content":
             if self._stream_kind != "content" or self._current_content_label is None:
-                self._current_content_label = self._create_output_label("", "assistantText")
+                self._current_content_label = self._create_output_label(
+                    "", "assistantText", markdown=True
+                )
                 self._current_content_text = ""
                 self._add_output_widget(self._current_content_label)
             self._current_content_text += value
@@ -906,8 +908,8 @@ class ChatPage(QWidget):
         self.set_busy(True)
         self.send_requested.emit(text, self.chat_id)
 
-    def _append_text_block(self, text: str, object_name: str) -> QLabel:
-        label = self._create_output_label(text, object_name)
+    def _append_text_block(self, text: str, object_name: str, markdown: bool = False) -> QLabel:
+        label = self._create_output_label(text, object_name, markdown=markdown)
         self._add_output_widget(label)
         return label
 
@@ -936,15 +938,17 @@ class ChatPage(QWidget):
 
         self.append_agent_message(message_type, value)
 
-    def _create_output_label(self, text: str, object_name: str) -> QLabel:
+    def _create_output_label(self, text: str, object_name: str, markdown: bool = False) -> QLabel:
         label = QLabel(text)
         label.setObjectName(object_name)
-        label.setTextFormat(Qt.TextFormat.PlainText)
+        label.setTextFormat(Qt.TextFormat.MarkdownText if markdown else Qt.TextFormat.PlainText)
         label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         label.setMaximumHeight(16777215)
+        if markdown:
+            label.setOpenExternalLinks(True)
         return label
 
     def _add_output_widget(self, widget: QWidget) -> None:
