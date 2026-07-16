@@ -23,6 +23,13 @@ class CommandPermissionRequest:
         self.done = threading.Event()
 
 
+class AskUserRequest:
+    def __init__(self, question: str) -> None:
+        self.question = question
+        self.answer = ""
+        self.done = threading.Event()
+
+
 class ClientEventBridge(QObject):
     ready = pyqtSignal()
     result = pyqtSignal(object)
@@ -34,6 +41,7 @@ class ClientEventBridge(QObject):
     client_command_start = pyqtSignal(object)
     client_command_result = pyqtSignal(object)
     command_permission_requested = pyqtSignal(object)
+    ask_user_requested = pyqtSignal(object)
 
     def on_ready(self) -> None:
         self.ready.emit()
@@ -67,6 +75,12 @@ class ClientEventBridge(QObject):
         self.command_permission_requested.emit(request)
         request.done.wait()
         return request.decision
+
+    def request_ask_user(self, question: str) -> str:
+        request = AskUserRequest(question)
+        self.ask_user_requested.emit(request)
+        request.done.wait()
+        return request.answer
 
 
 class HyperagentClientWindow(QMainWindow):
@@ -147,6 +161,7 @@ class HyperagentClientWindow(QMainWindow):
         self.bridge.client_command_start.connect(self._on_client_command_start)
         self.bridge.client_command_result.connect(self._on_client_command_result)
         self.bridge.command_permission_requested.connect(self._on_command_permission_requested)
+        self.bridge.ask_user_requested.connect(self._on_ask_user_requested)
 
         try:
             self.client = RabbitMQClient(event_handler=self.bridge)
@@ -396,6 +411,13 @@ class HyperagentClientWindow(QMainWindow):
             request.decision = "allow_all"
         elif clicked == deny_button:
             request.decision = "deny"
+        request.done.set()
+
+    def _on_ask_user_requested(self, request: AskUserRequest) -> None:
+        answer, _accepted = QInputDialog.getMultiLineText(
+            self, "Agent has a question", request.question
+        )
+        request.answer = answer.strip()
         request.done.set()
 
     def _on_login_error(self, message: str) -> None:

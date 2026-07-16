@@ -91,6 +91,10 @@ class ConsoleClientUI:
                 return "deny"
             print("Enter y, n, or a.")
 
+    def request_ask_user(self, question: str) -> str:
+        print(f"\n[Agent asks] {question}")
+        return input("> ").strip()
+
     @staticmethod
     def on_waiting_result() -> None:
         print("Waiting for result...")

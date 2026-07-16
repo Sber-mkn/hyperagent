@@ -149,6 +149,8 @@ def ask_user(question: str) -> str:
     Args:
         question: вопрос, который нужно задать пользователю.
     """
+    if registry.on_ask_user is not None:
+        return registry.on_ask_user(question)
     print(f"\n[Вопрос пользователю] {question}")
     return input("> ")
 

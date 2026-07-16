@@ -17,6 +17,11 @@ _SPHINX_PARAM = re.compile(r'^:param\s+(?:\w+\s+)?(\w+)\s*:\s*(.*)$')  # :param 
 
 
 on_command: Optional[Callable[[dict[str, Any]], Any]] = None
+# UI-specific hook for ask_user: whichever client is actually running (GUI or
+# console) wires this to something that can reach the real human, since a
+# plain input() has no interactive stdin to read in a GUI process. Left
+# unset, ask_user falls back to input() (e.g. a bare "python -m agent.main").
+on_ask_user: Optional[Callable[[str], str]] = None
 
 
 @dataclass

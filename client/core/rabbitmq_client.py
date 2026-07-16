@@ -9,6 +9,7 @@ import uuid
 import pika
 
 from agent.tools import execute_tool
+from agent.tools import registry as tools_registry
 from client.core.client_state import ACCESS_ASK, ACCESS_FULL, ACCESS_READ_ONLY
 from rabbitmq.rabbitmq_service import RabbitMQBase
 
@@ -44,6 +45,13 @@ class RabbitMQClient(RabbitMQBase):
         self.allow_commands_for_request = False
         self.ready_event = threading.Event()
         self.event_handler = event_handler
+        # ask_user runs through the generic tool registry (like any other
+        # client-target tool), so it has no direct handle on this client's
+        # UI. Wire the registry's global hook to whatever this event handler
+        # provides, the same way request_command_permission is looked up.
+        ask_user_handler = getattr(event_handler, "request_ask_user", None)
+        if ask_user_handler is not None:
+            tools_registry.on_ask_user = ask_user_handler
 
     def _emit(self, event_name: str, *args) -> None:
         handler = getattr(self.event_handler, event_name, None)
