@@ -70,6 +70,13 @@ def on_start_message(model: str) -> None:
     _send_agent_message("start", model)
 
 
+def on_error(message: str) -> None:
+    get_rabbitmq().publish_message(
+        {"type": "error", "error": message},
+        routing_key=CLIENT_ROUTING_KEY,
+    )
+
+
 def on_tool_call(name: str, arguments, target: str, result_preview: str) -> None:
     if isinstance(arguments, str):
         with contextlib.suppress(json.JSONDecodeError, TypeError):
