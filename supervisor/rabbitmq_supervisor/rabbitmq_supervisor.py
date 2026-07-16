@@ -98,27 +98,6 @@ class RabbitMQSupervisor(RabbitMQBase):
                 self.agent_ready = True
                 self.send_ready_message()
 
-            elif message_type == "login":
-                self.agent_session = {
-                    "agent_type": message.get("agent_type"),
-                    "agent_config": message.get("agent_config") or {},
-                }
-                logger.info(
-                    "Client login request: agent_type=%s model=%s",
-                    self.agent_session.get("agent_type"),
-                    self.agent_session.get("agent_config", {}).get("AGENT_MODEL"),
-                )
-                if self.agent_ready:
-                    self.send_ready_message()
-                else:
-                    self.publish_message(
-                        {
-                            "type": "agent_message",
-                            "message_type": "status",
-                            "message": "Agent is starting, wait for ready.",
-                        },
-                        CLIENT_KEY,
-                    )
 
             else:
                 logger.info(f"Unknown type: {message_type}")

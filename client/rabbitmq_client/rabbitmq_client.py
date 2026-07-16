@@ -11,9 +11,12 @@ from rabbitmq.rabbitmq_service import RabbitMQBase
 
 USER = "client"
 PASSWORD = "12345"
-EXCHANGE = "agent_exchange"
+AGENT_EXCHANGE = "agent_exchange"
+AGENT_ROUTING_KEY = "agent"
+EXCHANGE = "router_exchange"
+ROUTER_QUEUE = "router_queue"
 CLIENT_QUEUE = "client_queue"
-ROUTING_KEY = "agent"
+ROUTING_KEY = "router"
 SUPERVISOR_ROUTING_KEY = "supervisor"
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
@@ -35,10 +38,12 @@ class RabbitMQClient(RabbitMQBase):
     ):
         super().__init__(user, password, exchange, queue, routing_key, host=host, port=port)
         self.is_ready = False
+        self.is_authenticated = threading.Event()
         self.pending_message = None
         self.agent_session = {}
         self.ready_event = threading.Event()
-        self._stream_kind = None  # "think"/"content"/None — для непрерывного вывода чанков
+        self._stream_kind = None
+        self.login = None
 
     def send_login(
         self,
@@ -51,15 +56,22 @@ class RabbitMQClient(RabbitMQBase):
             "agent_type": agent_type,
             "agent_config": agent_config,
         }
-        self.publish_message(
+        response = self.request_response(
             {
                 "type": "login",
                 "login": login,
                 "password": password,
                 **self.agent_session,
             },
-            routing_key=SUPERVISOR_ROUTING_KEY,
+            routing_key="router",
+            timeout=300,
         )
+        if response.get("type") == "login_response":
+            self.login = login
+            self._reconnect_to_personal(response)
+        else:
+            logger.error(f"Login failed: {response.get('error')}")
+            os._exit(1)
 
     def receive_message(self, ch, method, properties, body):
         try:
@@ -113,6 +125,26 @@ class RabbitMQClient(RabbitMQBase):
             logger.exception("Error processing client message: %s", e)
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
+    def _reconnect_to_personal(self, credentials: dict):
+        self.connection.close()
+
+        personal_url = (
+            f"amqp://{credentials['rabbitmq_user']}:{credentials['rabbitmq_password']}"
+            f"@{credentials['rabbitmq_host']}:{credentials['rabbitmq_port']}/"
+        )
+
+        self.connection = pika.BlockingConnection(pika.URLParameters(personal_url))
+        self.channel = self.connection.channel()
+
+        self.exchange = AGENT_EXCHANGE
+        self.queue = CLIENT_QUEUE
+        self.routing_key = AGENT_ROUTING_KEY
+
+        self.channel.basic_qos(prefetch_count=1)
+        self.channel.basic_consume(queue=self.queue, on_message_callback=self.receive_message)
+        logger.info(f"Connected to personal RabbitMQ at {credentials['rabbitmq_host']}:{credentials['rabbitmq_port']}")
+        self.is_authenticated.set()
+
     def _print_agent_message(self, kind: str, text: str) -> None:
         """Печатает чанки think/content единым потоком вместо строки на каждый чанк."""
         if kind in ("think", "content"):
@@ -148,6 +180,35 @@ class RabbitMQClient(RabbitMQBase):
             )
             print("Waiting for result...")
             self.pending_message = None
+
+    def send_logout(self):
+        if not self.login:
+            return
+        temp_connection = None
+        try:
+            router_url = f"amqp://{USER}:{PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}/"
+            temp_connection = pika.BlockingConnection(pika.URLParameters(router_url))
+            temp_channel = temp_connection.channel()
+
+            temp_channel.basic_publish(
+                exchange=EXCHANGE,
+                routing_key=ROUTING_KEY,  # "router"
+                body=json.dumps({
+                    "type": "logout",
+                    "login": self.login,
+                }),
+                properties=pika.BasicProperties(
+                    content_type="application/json",
+                    delivery_mode=2,
+                )
+            )
+            logger.info("Logout message sent to router")
+        except Exception as e:
+            logger.error(f"Failed to send logout message: {e}")
+        finally:
+            if temp_connection and not temp_connection.is_closed:
+                temp_connection.close()
+
 
     def input_loop(self):
         while True:

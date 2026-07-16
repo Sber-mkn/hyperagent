@@ -13,7 +13,6 @@ from client.rabbitmq_client.rabbitmq_client import RabbitMQClient
 logger = logging.getLogger(__name__)
 LOCAL_MODELS = ("auto", "Model 1", "Model 2")
 
-
 def _prompt_non_empty(prompt: str, secret: bool = False) -> str:
     while True:
         value = getpass(prompt).strip() if secret else input(prompt).strip()
@@ -78,11 +77,16 @@ if __name__ == "__main__":
     client = RabbitMQClient()
     logger.info("Starting client")
     client.send_login(*login_payload)
+    authenticated = client.is_authenticated.wait(timeout=300)
+    if not authenticated:
+        logger.exception("Authentication timeout or failed.")
+        sys.exit(1)
 
     input_thread = threading.Thread(target=client.input_loop, daemon=True)
     input_thread.start()
     try:
         client.start_consuming()
     except KeyboardInterrupt:
+        client.send_logout()
         print("\nClient stopped")
         sys.exit(0)

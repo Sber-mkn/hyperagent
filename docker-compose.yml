@@ -1,94 +1,184 @@
 services:
-  db:
+  router_db:
+    profiles: ["router"]
     image: postgres:15-alpine
-    container_name: hyperagent_postgres
+    container_name: router_db
+    restart: always
+    environment:
+      POSTGRES_DB: router_db
+      POSTGRES_USER: router
+      POSTGRES_PASSWORD: 12345
+    ports:
+      - "5433:5432"
+    volumes:
+      - router_db_data:/var/lib/postgresql/data
+      - ./router/database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U router -d router_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  router_rabbitmq:
+    profiles: ["router"]
+    image: rabbitmq:3-management
+    container_name: router_rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - router_rabbitmq_data:/var/lib/rabbitmq
+      - ./router/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./router/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    environment:
+      RABBITMQ_DEFAULT_USER: router
+      RABBITMQ_DEFAULT_PASS: router_secret
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  router:
+    profiles: ["router"]
+    build:
+      context: .
+      dockerfile: router/Dockerfile
+    container_name: hyperagent_router
+    restart: always
+    depends_on:
+      router_db:
+        condition: service_healthy
+      router_rabbitmq:
+        condition: service_healthy
+    environment:
+      - BASE_DIR=hyperagent
+      - ROUTER_HOST=router_db
+      - ROUTER_PORT=5432
+      - ROUTER_DB=router_db
+      - ROUTER_USER=router
+      - ROUTER_PASSWORD=12345
+      - RABBITMQ_HOST=router_rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=router
+      - RABBITMQ_PASSWORD=12345
+      - BASE_DIR=/hyperagent
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/hyperagent
+
+  agent_db:
+    profiles: ["agent"]
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+    container_name: hyperagent_postgres_${LOGIN}
     restart: always
     environment:
       POSTGRES_DB: hyperagent_db
       POSTGRES_USER: supervisor
       POSTGRES_PASSWORD: 12345
     ports:
-      - "5432:5432"
+      - "${DB_PORT}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - agent_db_data:/var/lib/postgresql/data
       - ./database/init-database:/docker-entrypoint-initdb.d
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U supervisor -d hyperagent_db" ]
+      test: ["CMD-SHELL", "pg_isready -U supervisor -d hyperagent_db"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+  agent_rabbitmq:
+    profiles: ["agent"]
+    build:
+      context: ./rabbitmq
+      dockerfile: Dockerfile
+    container_name: hyperagent_rabbitmq_${LOGIN}
+    restart: always
+    ports:
+      - "${RABBITMQ_PORT}:5672"
+      - "${RABBITMQ_MGMT_PORT}:15672"
+    volumes:
+      - agent_rabbitmq_data:/var/lib/rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
   agent:
+    profiles: ["agent"]
     build:
       context: .
       dockerfile: agent_immutable/Dockerfile
-    container_name: hyperagent_agent
+    container_name: hyperagent_agent_${LOGIN}
     depends_on:
-      db:
+      agent_db:
         condition: service_healthy
-      rabbitmq:
+      agent_rabbitmq:
         condition: service_healthy
     environment:
       - V3_DATA_DIR=/hyperagent/logs/agent_data
       - AGENT_WORKDIR=/hyperagent/workdir
       - AGENT_ROOT=/hyperagent/agent
-      - PYTHONUNBUFFERED=1
-      - OLLAMA_URL=http://host.docker.internal:11434/api/chat
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - ./agent:/hyperagent/agent:rw
-      - ./workdir:/hyperagent/workdir:rw
-      - ./logs:/hyperagent/logs:rw
-      - ./rabbitmq:/hyperagent/rabbitmq:ro
-      - ./constitution:/hyperagent/constitution:ro
-      - ./agent_immutable:/hyperagent/agent_immutable:ro
-      - ./database/agent:/hyperagent/database/agent:ro
-    restart: always
-  supervisor:
-    build:
-      context: .
-      dockerfile: supervisor/Dockerfile
-    container_name: hyperagent_supervisor
-    depends_on:
-      db:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    environment:
-      - POSTGRES_HOST=db
+      - POSTGRES_HOST=agent_db
       - POSTGRES_PORT=5432
       - POSTGRES_DB=hyperagent_db
       - POSTGRES_USER=supervisor
       - POSTGRES_PASSWORD=12345
       - PYTHONUNBUFFERED=1
+      - RABBITMQ_HOST=agent_rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=agent
+      - RABBITMQ_PASSWORD=12345
+      - CLIENT_LOGIN=${LOGIN}
     volumes:
-      - ./agent:/hyperagent/agent
-      - ./agent_git:/hyperagent/agent_git
-      - ./supervisor:/hyperagent/supervisor
-      - ./database:/hyperagent/database
-      - ./rabbitmq:/hyperagent/rabbitmq
-      - ./requirements:/hyperagent/requirements
-      - ./contracts:/hyperagent/contracts
-      - /var/run/docker.sock:/var/run/docker.sock
-  rabbitmq:
-    image: rabbitmq:3-management
-    container_name: hyperagent_rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
-      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - agent_work:/hyperagent/agent:rw
+      - ./workdir:/hyperagent/workdir:rw
+      - ./logs:/hyperagent/logs:rw
+    restart: always
+
+  supervisor:
+    profiles: ["agent"]
+    build:
+      context: .
+      dockerfile: supervisor/Dockerfile
+    container_name: hyperagent_supervisor_${LOGIN}
+    depends_on:
+      agent_db:
+        condition: service_healthy
+      agent_rabbitmq:
+        condition: service_healthy
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
-    healthcheck:
-      test: [ "CMD", "rabbitmq-diagnostics", "check_port_connectivity" ]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      - POSTGRES_HOST=agent_db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=hyperagent_db
+      - POSTGRES_USER=supervisor
+      - POSTGRES_PASSWORD=12345
+      - PYTHONUNBUFFERED=1
+      - RABBITMQ_HOST=agent_rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=supervisor
+      - RABBITMQ_PASSWORD=12345
+      - CLIENT_LOGIN=${LOGIN}
+      - AGENT_CONTAINER_NAME=hyperagent_agent_${LOGIN}
+    volumes:
+      - agent_work:/hyperagent/agent
+      - agent_git:/hyperagent/agent_git
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    restart: always
+
 volumes:
-  postgres_data:
-  rabbitmq_data:
+  router_db_data:
+  router_rabbitmq_data:
+  agent_db_data:
+  agent_rabbitmq_data:
+  agent_work:
+  agent_git:
