@@ -191,6 +191,15 @@ class ChatController:
         settings["model"] = model
         self.save_settings(settings)
 
+    def set_model_choice(self, model: str, model_name: str) -> None:
+        settings = self.settings()
+        settings["model"] = model
+        if model == MODEL_OPENROUTER:
+            settings["openrouter_model"] = model_name
+        elif model == MODEL_OLLAMA:
+            settings["ollama_model"] = model_name
+        self.save_settings(settings)
+
     def set_access(self, access: str) -> None:
         settings = self.settings()
         settings["access"] = access

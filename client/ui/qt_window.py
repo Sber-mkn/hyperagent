@@ -117,6 +117,7 @@ class HyperagentClientWindow(QMainWindow):
         self.chat_page.rename_chat_requested.connect(self._rename_chat)
         self.chat_page.settings_requested.connect(self._show_settings)
         self.chat_page.model_selected.connect(self._select_model)
+        self.chat_page.model_choice_selected.connect(self._select_model_choice)
         self.chat_page.access_selected.connect(self._select_access)
         self.chat_page.logout_requested.connect(self._logout)
         self.chat_page.send_requested.connect(self._send_task)
@@ -220,13 +221,20 @@ class HyperagentClientWindow(QMainWindow):
         self.controller.set_model(model)
         self._apply_settings_to_ui()
 
+    def _select_model_choice(self, model: str, model_name: str) -> None:
+        self.controller.set_model_choice(model, model_name)
+        if not self.controller.model_configured(model):
+            self._show_settings(model)
+            return
+        self._apply_settings_to_ui()
+
     def _select_access(self, access: str) -> None:
         self.controller.set_access(access)
         self._apply_settings_to_ui()
 
     def _apply_settings_to_ui(self) -> None:
         settings = self.controller.settings()
-        self.chat_page.set_model(str(settings.get("model") or MODEL_LOCAL))
+        self.chat_page.set_model(str(settings.get("model") or MODEL_LOCAL), settings)
         self.chat_page.set_access(str(settings.get("access") or ACCESS_ASK))
 
     def _show_chat_list(self) -> None:
