@@ -76,7 +76,14 @@ class GitService:
         else:
             logger.info("Repository has commits")
 
-            self.check()
+            # Runs once per supervisor startup, before any task has executed —
+            # whatever is on disk here has not been self-modified by a live
+            # agent session yet, so it is trusted directly as STABLE instead
+            # of going through the PENDING -> ack -> STABLE gate used for
+            # in-session self-modifications (see check()).
+            self.add()
+            if self.status():
+                self.commit("Startup sync", is_stable=True)
 
     def check(self):
         self.add()

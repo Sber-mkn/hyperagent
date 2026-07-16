@@ -26,11 +26,17 @@ def error_handler(message: dict, git_service: GitService):
         snapshot_id, snapshot_sha, snapshot_message = snapshot
         add_error(snapshot_id, error_text)
         update_snapshot_status(snapshot_id, "ERROR")
-    stable_snapshot = get_snapshot_by_status("STABLE")
-    if not stable_snapshot:
-        raise ValueError("Database has not STABLE snapshot")
-    _, snapshot_sha, _ = stable_snapshot
-    git_service.rollback(snapshot_sha)
+
+        stable_snapshot = get_snapshot_by_status("STABLE")
+        if not stable_snapshot:
+            raise ValueError("Database has not STABLE snapshot")
+        _, snapshot_sha, _ = stable_snapshot
+        git_service.rollback(snapshot_sha)
+    # No PENDING snapshot means nothing self-modified agent/ since the last
+    # STABLE point, so this error isn't attributable to an unverified code
+    # change — rolling back would just discard whatever is currently on
+    # disk for no reason. Just restart and retry with the same code.
+
     start_agent()
 
     return error_text
