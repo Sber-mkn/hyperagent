@@ -27,7 +27,7 @@ from agent.react_agent import build_agent
 from agent.skills import SkillManager
 from agent.tools import tools_spec
 
-AGENT_TYPE_TO_PROVIDER = {"local": "ollama", "api": "openai"}
+AGENT_TYPE_TO_PROVIDER = {"local": "ollama", "api": "openai", "ollama": "ollama"}
 
 
 def agent_logic(
@@ -44,6 +44,7 @@ def agent_logic(
     on_end_message: Callable[[Any], Any] | None = None,
     on_l3: Callable[[dict[str, Any]], Any] | None = None,
     on_start_message: Callable[[str], Any] | None = None,
+    on_error: Callable[[str], Any] | None = None,
 ) -> str:
     """Run one task and return the final assistant answer."""
     task = (user_message or "").strip()
@@ -100,7 +101,8 @@ def _build_client(
     provider = AGENT_TYPE_TO_PROVIDER.get(agent_type, LLM_PROVIDER)
 
     if provider == "ollama":
-        return OllamaClient(url=OLLAMA_URL), {
+        url = agent_config.get("OLLAMA_URL") or OLLAMA_URL
+        return OllamaClient(url=url), {
             "num_ctx": AGENT_NUM_CTX,
             "num_predict": MAX_OUTPUT_TOKENS,
         }

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql.functions import current_timestamp
@@ -11,10 +11,30 @@ class Base(DeclarativeBase):
     pass
 
 
+class Chat(Base):
+    __tablename__ = "chats"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'New Chat'"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=current_timestamp()
+    )
+
+
+class ClientChat(Base):
+    __tablename__ = "client_chat"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chat_id: Mapped[int] = mapped_column(Integer, ForeignKey("chats.id"), nullable=False)
+    message_type: Mapped[str] = mapped_column(Text, nullable=False)
+    message: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    dt: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=current_timestamp()
+    )
+
+
 class LLMMessage(Base):
     __tablename__ = "llmchat"
     id: Mapped[int] = mapped_column(primary_key=True)
-    chat_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    chat_id: Mapped[int] = mapped_column(Integer, ForeignKey("chats.id"), nullable=False)
     done: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     done_reason: Mapped[str] = mapped_column(Text, nullable=True)
     role: Mapped[str] = mapped_column(String(10), nullable=False)

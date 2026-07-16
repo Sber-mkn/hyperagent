@@ -1,9 +1,8 @@
 import json
 import logging
 
-from database.agent.crud import get_l3_memory, get_llmchat
 from rabbitmq.rabbitmq_service import RabbitMQBase
-from supervisor.message_handler import ack_handler, error_handler, git_handler
+from supervisor.message_handler import ack_handler, client_data_handler, error_handler, git_handler
 from supervisor.rollback import start_agent
 
 logger = logging.getLogger(__name__)
@@ -29,16 +28,14 @@ class RabbitMQSupervisor(RabbitMQBase):
         super().__init__(user, password, exchange, queue, routing_key)
         self.git_service = git_service
         self.agent_ready = True
-        self.agent_session = None
         logger.info("RabbitMQ connection established")
 
     def send_start_command(
         self,
         task=None,
         error_text=None,
-        llm_chat=None,
-        l3_memory=None,
-        chat_id=None,
+        agent_session=None,
+        replayed_task=False,
     ):
         message = {
             "command": "start",
@@ -47,14 +44,10 @@ class RabbitMQSupervisor(RabbitMQBase):
             message["task"] = task
         if error_text:
             message["error_text"] = error_text
-        if llm_chat is not None:
-            message["llm_chat"] = llm_chat
-        if l3_memory is not None:
-            message["l3_memory"] = l3_memory
-        if chat_id is not None:
-            message["chat_id"] = chat_id
-        if self.agent_session is not None:
-            message["agent_session"] = self.agent_session
+        if agent_session is not None:
+            message["agent_session"] = agent_session
+        if replayed_task:
+            message["replayed_task"] = True
         self.publish_message(message)
 
     def send_ready_message(self):
@@ -71,13 +64,17 @@ class RabbitMQSupervisor(RabbitMQBase):
             logger.info("Message consumed: %s", message_type)
 
             if message.get("command") == "start":
-                chat_id = message.get("chat_id")
-                logger.info(chat_id)
                 self.send_start_command(
                     task=message.get("task"),
-                    llm_chat=get_llmchat(chat_id),
-                    l3_memory=get_l3_memory(chat_id),
-                    chat_id=chat_id,
+                    agent_session=message.get("agent_session"),
+                )
+
+            elif message_type == "client_data":
+                result = client_data_handler(message)
+                self.send_response(
+                    reply_to=properties.reply_to,
+                    correlation_id=properties.correlation_id,
+                    response=result,
                 )
 
             elif message_type == "git":
@@ -98,11 +95,10 @@ class RabbitMQSupervisor(RabbitMQBase):
                     )
                     start_agent()
 
-                    chat_id = message.get("chat_id")
                     self.send_start_command(
-                        llm_chat=get_llmchat(chat_id),
-                        l3_memory=get_l3_memory(chat_id),
-                        chat_id=chat_id,
+                        task=message.get("task"),
+                        agent_session=message.get("agent_session"),
+                        replayed_task=True,
                     )
                 else:
                     self.send_response(
@@ -112,15 +108,13 @@ class RabbitMQSupervisor(RabbitMQBase):
                     )
 
             elif message_type == "error":
-                chat_id = message.get("chat_id")
                 self.agent_ready = False
                 error_text = error_handler(message, self.git_service)
                 self.send_start_command(
                     task=message.get("task"),
                     error_text=error_text,
-                    llm_chat=get_llmchat(chat_id),
-                    l3_memory=get_l3_memory(chat_id),
-                    chat_id=chat_id,
+                    agent_session=message.get("agent_session"),
+                    replayed_task=True,
                 )
 
             elif message_type == "ack":
@@ -129,15 +123,6 @@ class RabbitMQSupervisor(RabbitMQBase):
                 self.send_ready_message()
 
             elif message_type == "login":
-                self.agent_session = {
-                    "agent_type": message.get("agent_type"),
-                    "agent_config": message.get("agent_config") or {},
-                }
-                logger.info(
-                    "Client login request: agent_type=%s model=%s",
-                    self.agent_session.get("agent_type"),
-                    self.agent_session.get("agent_config", {}).get("AGENT_MODEL"),
-                )
                 if self.agent_ready:
                     self.send_ready_message()
                 else:
