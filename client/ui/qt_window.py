@@ -233,6 +233,10 @@ class HyperagentClientWindow(QMainWindow):
         settings = self.controller.settings()
         self.chat_page.set_model(str(settings.get("model") or MODEL_LOCAL), settings)
         self.chat_page.set_access(str(settings.get("access") or ACCESS_ASK))
+        # Keep the Settings page's radios/fields in sync too, not just on the
+        # next time it's opened — the provider can now change from chat alone
+        # (provider selector) without ever visiting Settings.
+        self.settings_page.set_settings(settings)
 
     def _show_chat_list(self) -> None:
         if self.logged_in and not self.controller.has_busy_chats():

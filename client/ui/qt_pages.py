@@ -483,11 +483,14 @@ class ChatPage(QWidget):
         )
 
     def set_model(self, model: str, settings: dict[str, Any] | None = None) -> None:
+        context_changed = False
         if settings is not None:
-            self._provider_context = {
+            new_context = {
                 "ollama_url": str(settings.get("ollama_url") or ""),
                 "openrouter_api_key": str(settings.get("openrouter_api_key") or ""),
             }
+            context_changed = new_context != self._provider_context
+            self._provider_context = new_context
             self._model_by_provider = {
                 MODEL_LOCAL: str(settings.get("local_model") or ""),
                 MODEL_OPENROUTER: str(settings.get("openrouter_model") or ""),
@@ -497,7 +500,11 @@ class ChatPage(QWidget):
         self._current_provider = model
         self.provider_button.setText(_PROVIDER_LABELS.get(model, "Hyper"))
         self._update_model_button()
-        if provider_changed or model not in self._fetched_providers:
+        # Refresh the model list on an actual provider switch, the first time
+        # this provider is ever seen, or when its connection details (Ollama
+        # URL / OpenRouter key) changed since the last fetch — a saved
+        # Settings edit invalidates whatever was cached before it.
+        if provider_changed or context_changed or model not in self._fetched_providers:
             self._refresh_available_models(model)
 
     def _update_model_button(self) -> None:
