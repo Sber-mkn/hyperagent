@@ -7,6 +7,7 @@ from PyQt6.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QMouseEvent
 from PyQt6.QtWidgets import (
     QButtonGroup,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QInputDialog,
@@ -282,6 +283,8 @@ class SettingsPage(QWidget):
         self.openrouter_api_input = QLineEdit()
         self.ollama_url_input = QLineEdit()
         self.openai_api_input = QLineEdit()
+        self.work_dir_input = QLineEdit()
+        self.work_dir_browse_button = QPushButton("Browse…")
         self.dark_radio = QRadioButton("Dark")
         self.light_radio = QRadioButton("Light")
         self.back_button = QPushButton("Back")
@@ -289,6 +292,7 @@ class SettingsPage(QWidget):
         self.openrouter_frame = QFrame()
         self.ollama_frame = QFrame()
         self.openai_frame = QFrame()
+        self.work_dir_frame = QFrame()
         self._build()
 
     def set_settings(self, settings: dict[str, Any], focus_model: str | None = None) -> None:
@@ -300,6 +304,7 @@ class SettingsPage(QWidget):
         self.openrouter_api_input.setText(str(settings.get("openrouter_api_key") or ""))
         self.ollama_url_input.setText(str(settings.get("ollama_url") or ""))
         self.openai_api_input.setText(str(settings.get("openai_api_key") or ""))
+        self.work_dir_input.setText(str(settings.get("work_dir") or ""))
         self.dark_radio.setChecked(settings.get("theme") != "light")
         self.light_radio.setChecked(settings.get("theme") == "light")
         self._sync_model_fields()
@@ -345,6 +350,10 @@ class SettingsPage(QWidget):
         layout.addWidget(self.openrouter_frame)
         layout.addWidget(self.ollama_frame)
         layout.addWidget(self.openai_frame)
+
+        layout.addWidget(_settings_section_title("Working directory"))
+        self._build_work_dir_frame()
+        layout.addWidget(self.work_dir_frame)
 
         layout.addWidget(_settings_section_title("Theme"))
         self.theme_group.addButton(self.dark_radio)
@@ -395,6 +404,31 @@ class SettingsPage(QWidget):
         layout.addWidget(api_label)
         layout.addWidget(self.openai_api_input)
 
+    def _build_work_dir_frame(self) -> None:
+        self.work_dir_frame.setObjectName("settingsPanel")
+        layout = QVBoxLayout(self.work_dir_frame)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(8)
+        dir_label = QLabel("Agent's working directory on this machine")
+        dir_label.setObjectName("inputLabel")
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.work_dir_input.setPlaceholderText("workdir (default)")
+        row.addWidget(self.work_dir_input, 1)
+        self.work_dir_browse_button.setObjectName("ghostButton")
+        self.work_dir_browse_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.work_dir_browse_button.clicked.connect(self._browse_work_dir)
+        row.addWidget(self.work_dir_browse_button)
+        layout.addWidget(dir_label)
+        layout.addLayout(row)
+
+    def _browse_work_dir(self) -> None:
+        directory = QFileDialog.getExistingDirectory(
+            self, "Choose working directory", self.work_dir_input.text().strip()
+        )
+        if directory:
+            self.work_dir_input.setText(directory)
+
     def _sync_model_fields(self, _checked: bool = False) -> None:
         self.openrouter_frame.setVisible(self.openrouter_radio.isChecked())
         self.ollama_frame.setVisible(self.ollama_radio.isChecked())
@@ -413,6 +447,7 @@ class SettingsPage(QWidget):
             "openrouter_api_key": self.openrouter_api_input.text().strip(),
             "ollama_url": self.ollama_url_input.text().strip(),
             "openai_api_key": self.openai_api_input.text().strip(),
+            "work_dir": self.work_dir_input.text().strip(),
             "theme": "light" if self.light_radio.isChecked() else "dark",
         }
 

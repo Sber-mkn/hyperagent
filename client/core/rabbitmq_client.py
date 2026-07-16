@@ -21,7 +21,7 @@ ROUTING_KEY = "agent"
 SUPERVISOR_ROUTING_KEY = "supervisor"
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
-WORKDIR = pathlib.Path(os.getenv("CLIENT_WORKDIR", "workdir"))
+DEFAULT_WORKDIR = pathlib.Path(os.getenv("CLIENT_WORKDIR", "workdir"))
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,7 @@ class RabbitMQClient(RabbitMQBase):
         self._rpc_host = RABBITMQ_HOST
         self._rpc_port = RABBITMQ_PORT
         self.agent_session = {}
+        self.work_dir = DEFAULT_WORKDIR
         self.allow_commands_for_request = False
         self.ready_event = threading.Event()
         self.event_handler = event_handler
@@ -52,6 +53,9 @@ class RabbitMQClient(RabbitMQBase):
         ask_user_handler = getattr(event_handler, "request_ask_user", None)
         if ask_user_handler is not None:
             tools_registry.on_ask_user = ask_user_handler
+
+    def set_work_dir(self, work_dir: str | None) -> None:
+        self.work_dir = pathlib.Path(work_dir) if work_dir else DEFAULT_WORKDIR
 
     def _emit(self, event_name: str, *args) -> None:
         handler = getattr(self.event_handler, event_name, None)
@@ -166,14 +170,15 @@ class RabbitMQClient(RabbitMQBase):
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 
             elif message_type == "client_command":
-                WORKDIR.mkdir(parents=True, exist_ok=True)
+                work_dir = self.work_dir
+                work_dir.mkdir(parents=True, exist_ok=True)
                 command_id = properties.correlation_id or str(method.delivery_tag)
                 command = message.get("command") or {}
                 display_command = _describe_command(command)
                 command_info = {
                     "id": command_id,
                     "command": display_command,
-                    "cwd": str(WORKDIR),
+                    "cwd": str(work_dir),
                 }
                 self._emit(
                     "on_client_command_start",
@@ -182,7 +187,7 @@ class RabbitMQClient(RabbitMQBase):
                 if self._can_run_command(command_info):
                     prev_cwd = os.getcwd()
                     try:
-                        os.chdir(WORKDIR)
+                        os.chdir(work_dir)
                         _, result = execute_tool(command)
                     finally:
                         os.chdir(prev_cwd)

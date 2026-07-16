@@ -36,6 +36,7 @@ class ChatController:
     def attach_client(self, client: RabbitMQClient) -> None:
         self.client = client
         client.agent_session = self.agent_session()
+        client.set_work_dir(self.settings().get("work_dir") or None)
 
     def detach_client(self) -> None:
         self.client = None
@@ -188,6 +189,7 @@ class ChatController:
         self.state.save_settings(settings)
         if self.client is not None:
             self.client.agent_session = self.agent_session()
+            self.client.set_work_dir(settings.get("work_dir") or None)
 
     def set_model(self, model: str) -> None:
         settings = self.settings()

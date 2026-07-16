@@ -30,6 +30,7 @@ DEFAULT_SETTINGS = {
     "openai_model": "",
     "theme": "dark",
     "access": ACCESS_ASK,
+    "work_dir": "",
 }
 
 
