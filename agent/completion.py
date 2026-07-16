@@ -93,7 +93,12 @@ class CompletionChecker:
         for _attempt in range(2):
             try:
                 response = self.client.send(chat, model=self.model, temperature=0, **self.options)
-                data = _parse_json(response[-1].content or "")
+                message = response[-1]
+                # A reasoning model may put its whole answer (including the
+                # JSON verdict) into "thinking" and leave "content" empty --
+                # fall back to it rather than failing on an empty string.
+                raw = (message.content or "").strip() or (message.thinking or "")
+                data = _parse_json(raw)
                 completed = data.get("completed") is True
                 reason = " ".join(str(data.get("reason") or "").split())
                 fix = " ".join(str(data.get("fix") or "").split())
@@ -113,7 +118,13 @@ class CompletionChecker:
 def _parse_json(text: str) -> dict:
     text = text.strip()
     if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text)
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text).strip()
+    # A reasoning trace often wraps the final JSON verdict in prose before
+    # and/or after it -- take the last brace-delimited block rather than
+    # requiring the whole string to be nothing but JSON.
+    start, end = text.rfind("{"), text.rfind("}")
+    if start != -1 and end > start:
+        text = text[start:end + 1]
     data = json.loads(text)
     if not isinstance(data, dict):
         raise ValueError("Completion review must be a JSON object")
