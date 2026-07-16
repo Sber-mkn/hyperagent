@@ -597,7 +597,13 @@ class ChatPage(QWidget):
         self._available_models[provider] = models
         if not self._model_by_provider.get(provider) and models:
             self._model_by_provider[provider] = models[0]
-            self.model_choice_selected.emit(provider, models[0])
+            # Only announce the auto-picked default if this fetch is still for
+            # the provider actually active right now. A background fetch
+            # started before a provider switch can resolve after the user has
+            # already moved on; letting it emit unconditionally would push
+            # settings["model"] back to the stale provider it was fetched for.
+            if provider == self._current_provider:
+                self.model_choice_selected.emit(provider, models[0])
         if provider == self._current_provider:
             self._update_model_button()
 
