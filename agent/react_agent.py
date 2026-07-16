@@ -10,6 +10,7 @@ from agent.llminterface.client.llm_chat import LLMMessage
 from agent.llminterface.client.llm_client import LLMClient
 from agent.memory import Turn
 from agent.tools import execute_tool, tool_target, tools_spec, truncate_middle
+from agent.tools.skills_list import skills_list
 
 
 MAX_TOOL_RESULT_CHARS = 24_000
@@ -84,11 +85,26 @@ def build_agent(client: LLMClient) -> AgentGraph:
             task,
             resume=state.get("resume_task", False),
         )
-        if appended and state.get("external_history"):
-            _emit(
-                state.get("on_end_message"),
-                LLMMessage.from_message({"role": "user", "content": task}),
-            )
+        if appended:
+            if state.get("external_history"):
+                _emit(
+                    state.get("on_end_message"),
+                    LLMMessage.from_message({"role": "user", "content": task}),
+                )
+            # Prime every new task with the learned-skill catalog up front,
+            # instead of relying on the model to decide to call skills_list
+            # itself — it previously sometimes skipped this and reinvented
+            # (or blindly retried) a broken approach from scratch.
+            catalog = skills_list()
+            if catalog and catalog != "[]":
+                state["memory_store"].append(
+                    Turn(role="tool", content=f"[skills_list] {catalog}", tool_name="skills_list")
+                )
+                if state.get("external_history"):
+                    _emit(
+                        state.get("on_end_message"),
+                        LLMMessage.tool_result("skills_list", catalog),
+                    )
         _emit(state.get("on_title"), _title(task))
         return {
             "iterations": 0,

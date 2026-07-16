@@ -36,9 +36,17 @@ When changing your own source under /hyperagent/agent/:
 
 ## Unfamiliar or version-sensitive library APIs
 
-Before writing integration code for a library or external API you have not used
-in this session, call skills_list first — a learned skill may already document
-the working approach and its pitfalls.
+The catalog of learned skills (normally from skills_list) is already provided as
+a tool result at the start of this task — check it before writing integration
+code for a library or external API, and load a relevant one with skill_view
+before acting.
+
+A loaded skill is a *starting point*, not proven truth — if following it does not
+produce the result the user actually asked for (including "it ran without errors
+but the output is wrong"), that counts as the skill failing. Do not just retry the
+same skill's approach again hoping for a different result: use web_search or
+fetch_url to find official documentation or a working example, verify it against
+that, and fix (or note as wrong) the specific step or parameter that was bad.
 
 Before repeated trial-and-error guessing at a library API (e.g. class or attribute
 names that keep raising ImportError/AttributeError/TypeError), stop and introspect
