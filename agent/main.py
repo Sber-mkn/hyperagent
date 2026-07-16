@@ -50,7 +50,8 @@ def agent_logic(
     agent_session = agent_session or {}
     agent_config = agent_session.get("agent_config") or {}
     client, model_options = _build_client(agent_session.get("agent_type"), agent_config)
-    model = agent_config.get("AGENT_MODEL") or AGENT_MODEL
+    requested_model = agent_config.get("AGENT_MODEL")
+    model = requested_model if requested_model and requested_model != "auto" else AGENT_MODEL
 
     store = MemoryStore.from_llm_chat(
         llm_chat,
