@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import uuid
 from abc import ABC, abstractmethod
 
@@ -7,6 +8,8 @@ import pika
 from pika.exceptions import AMQPError
 
 logger = logging.getLogger(__name__)
+DEFAULT_RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
+DEFAULT_RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
 
 
 class RequestResponseTimeoutError(TimeoutError):
@@ -19,8 +22,19 @@ so the connection survives long agent turns during which no AMQP frames are exch
 
 
 class RabbitMQBase(ABC):
-    def __init__(self, user, password, exchange, queue, routing_key):
-        self._rabbitmq_url = f"amqp://{user}:{password}@rabbitmq:5672/"
+    def __init__(
+        self,
+        user,
+        password,
+        exchange,
+        queue,
+        routing_key,
+        host: str | None = None,
+        port: int | str | None = None,
+    ):
+        host = host or DEFAULT_RABBITMQ_HOST
+        port = int(port or DEFAULT_RABBITMQ_PORT)
+        self._rabbitmq_url = f"amqp://{user}:{password}@{host}:{port}/"
         self.exchange = exchange
         self.queue = queue
         self.routing_key = routing_key
@@ -49,7 +63,7 @@ class RabbitMQBase(ABC):
             pass
         self._connect()
 
-    def publish_message(self, message: dict, routing_key: str | None = None):
+    def publish_message(self, message: dict | str, routing_key: str | None = None):
         body = json.dumps(message, ensure_ascii=False)
         if routing_key is None:
             routing_key = self.routing_key

@@ -27,6 +27,8 @@ from agent.react_agent import build_agent
 from agent.skills import SkillManager
 from agent.tools import tools_spec
 
+AGENT_TYPE_TO_PROVIDER = {"local": "ollama", "api": "openai"}
+
 
 def agent_logic(
     user_message: str,
@@ -45,7 +47,10 @@ def agent_logic(
 ) -> str:
     """Run one task and return the final assistant answer."""
     task = (user_message or "").strip()
-    client, model_options = _build_client()
+    agent_session = agent_session or {}
+    agent_config = agent_session.get("agent_config") or {}
+    client, model_options = _build_client(agent_session.get("agent_type"), agent_config)
+    model = agent_config.get("AGENT_MODEL") or AGENT_MODEL
 
     store = MemoryStore.from_llm_chat(
         llm_chat,
@@ -58,13 +63,13 @@ def agent_logic(
         AgentState(
             {
                 "user_message": task,
-                "model": AGENT_MODEL,
+                "model": model,
                 "model_options": model_options,
                 "tools": tools_spec(),
                 "memory_store": store,
                 "external_history": llm_chat is not None,
                 "resume_task": bool(error_text),
-                "agent_session": agent_session or {},
+                "agent_session": agent_session,
                 "memory_context": ContextManager(
                     store,
                     recovery_notice=_rollback_notice(error_text),
@@ -87,18 +92,26 @@ def agent_logic(
     return str(final.get("answer") or "").strip()
 
 
-def _build_client() -> tuple[LLMClient, dict[str, Any]]:
-    if LLM_PROVIDER == "ollama":
+def _build_client(
+    agent_type: str | None = None, agent_config: dict[str, Any] | None = None
+) -> tuple[LLMClient, dict[str, Any]]:
+    agent_config = agent_config or {}
+    provider = AGENT_TYPE_TO_PROVIDER.get(agent_type, LLM_PROVIDER)
+
+    if provider == "ollama":
         return OllamaClient(url=OLLAMA_URL), {
             "num_ctx": AGENT_NUM_CTX,
             "num_predict": MAX_OUTPUT_TOKENS,
         }
-    if LLM_PROVIDER in {"openai", "openrouter", "api"}:
+    if provider in {"openai", "openrouter", "api"}:
         return (
-            OpenaiClient(base_url=OPENAI_BASE_URL, api_key=OPENAI_API_KEY),
+            OpenaiClient(
+                base_url=OPENAI_BASE_URL,
+                api_key=agent_config.get("OPENROUTER_API_KEY") or OPENAI_API_KEY,
+            ),
             {"max_tokens": MAX_OUTPUT_TOKENS},
         )
-    raise ValueError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER}")
+    raise ValueError(f"Unsupported LLM_PROVIDER: {provider}")
 
 
 def _rollback_notice(error_text: str) -> str:

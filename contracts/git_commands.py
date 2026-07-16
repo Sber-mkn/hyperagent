@@ -11,10 +11,7 @@ class GitCommandType(StrEnum):
     DIFF = "diff"
     COMMIT = "commit"
     ROLLBACK = "rollback"
-
-
-class SupervisorCommandType(StrEnum):
-    GET_COMMITS = "get_commits"
+    LOG = "log"
 
 
 class GitStatusCommand(BaseModel):
@@ -36,12 +33,15 @@ class GitRollbackCommand(BaseModel):
     target_sha: str = Field(min_length=7, max_length=40)
 
 
-# TODO: подумать над реализацией получения всех коммитов агентом
-class GetCommitsCommand(BaseModel):
-    command: Literal[SupervisorCommandType.GET_COMMITS]
+class GetStableCommitsCommand(BaseModel):
+    command: Literal[GitCommandType.LOG]
 
 
 GitCommand = Annotated[
-    GitStatusCommand | GitDiffCommand | GitCommitCommand | GitRollbackCommand,
+    GitStatusCommand
+    | GitDiffCommand
+    | GitCommitCommand
+    | GitRollbackCommand
+    | GetStableCommitsCommand,
     Field(discriminator="command"),
 ]

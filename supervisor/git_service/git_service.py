@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import tokenize
 
-from database.crud import add_snapshot
+from database.crud import add_snapshot, get_stable_snapshots
 from supervisor.git_service.git_types import GitError, GitResult
 
 GIT_DIR = pathlib.Path("/hyperagent/agent_git")
@@ -216,6 +216,10 @@ class GitService:
             add_snapshot(sha, status, message)
 
         return True
+
+    @staticmethod
+    def log() -> dict:
+        return get_stable_snapshots()
 
     def current_branch(self) -> str:
         return self._current_branch_command().stdout.strip()

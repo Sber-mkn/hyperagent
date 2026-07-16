@@ -27,6 +27,16 @@ def get_snapshot_by_status(status):
         return None
 
 
+def get_stable_snapshots() -> dict:
+    with Session() as session:
+        snapshots = session.execute(
+            select(Snapshot.sha, Snapshot.modification)
+            .where(Snapshot.status == "STABLE")
+            .order_by(desc(Snapshot.snapshot_time))
+        ).all()
+        return {snapshot.sha: snapshot.modification for snapshot in snapshots}
+
+
 def update_snapshot_status(snapshot_id, snapshot_status):
     with Session() as session:
         try:
