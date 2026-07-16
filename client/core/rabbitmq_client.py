@@ -210,7 +210,7 @@ class RabbitMQClient(RabbitMQBase):
                     {
                         "id": command_id,
                         "command": display_command,
-                        "cwd": str(WORKDIR),
+                        "cwd": str(work_dir),
                         **display_result,
                     },
                 )
