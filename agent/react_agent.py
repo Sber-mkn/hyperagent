@@ -203,12 +203,6 @@ def build_agent(client: LLMClient) -> AgentGraph:
                 "The task result could not be verified because the verification "
                 f"step failed. Reason: {reason}\n\nNo skill was created."
             )
-        state["memory_store"].append(Turn(role="assistant", content=answer))
-        if state.get("external_history"):
-            _emit(
-                state.get("on_end_message"),
-                LLMMessage.from_message({"role": "assistant", "content": answer}),
-            )
         _emit(state.get("on_content"), answer)
         return {"answer": answer}
 
