@@ -128,17 +128,23 @@ def build_agent(client: LLMClient) -> AgentGraph:
             }
 
         retries = state.get("completion_retries", 0) + 1
+        fix_instruction = (
+            f"What to do: {review.fix} "
+            if review.fix
+            else "Continue the task with the required tools. "
+        )
         return {
             "candidate_message": message,
             "completion_verified": False,
             "completion_retries": retries,
             "last_completion_reason": review.reason,
+            "last_completion_fix": review.fix,
             "review_available": review.available,
             "completion_feedback": (
                 "Your proposed final answer was not sent to the user because the "
                 f"task is incomplete. Missing evidence: {review.reason} "
-                "Continue the task with the required tools. Do not claim success "
-                "until the result is verified."
+                f"{fix_instruction}"
+                "Do not claim success until the result is verified."
             ),
         }
 
@@ -184,11 +190,13 @@ def build_agent(client: LLMClient) -> AgentGraph:
 
     def verification_failed_node(state) -> dict[str, str]:
         reason = state.get("last_completion_reason") or "Unknown requirement"
+        fix = state.get("last_completion_fix") or ""
         if state.get("review_available", True):
             answer = (
                 "The task could not be verified after 2 correction attempts.\n\n"
                 f"Missing requirement: {reason}\n\n"
-                "The task remains incomplete. No skill was created."
+                + (f"What was still needed: {fix}\n\n" if fix else "")
+                + "The task remains incomplete. No skill was created."
             )
         else:
             answer = (

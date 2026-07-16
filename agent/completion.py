@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 class CompletionReview:
     completed: bool
     reason: str
+    fix: str = ""
     available: bool = True
 
 
@@ -44,18 +45,28 @@ class CompletionChecker:
                     "role": "system",
                     "content": (
                         "Verify whether an agent task is actually complete. Return "
-                        "JSON only with completed (boolean) and reason (string). "
-                        "Use actual tool results as evidence, not the assistant's "
-                        "claims or intentions. Promises, plans, future actions, "
-                        "missing requested artifacts, failed tools, and unverified "
-                        "results mean completed=false. Explanations and ordinary "
-                        "conversation can be complete without tools when the user "
-                        "did not request an action or verification. Treat facts "
-                        "stated by the user in the recorded conversation or memory "
-                        "summaries as valid evidence for recall questions. Preserve "
-                        "the user's meaning for labels such as code, name, or value; "
-                        "do not reinterpret them as requests for executable source "
-                        "code or additional artifacts. If uncertain, return false."
+                        "JSON only with completed (boolean), reason (string) and "
+                        "fix (string). Use actual tool results as evidence, not the "
+                        "assistant's claims or intentions. Promises, plans, future "
+                        "actions, missing requested artifacts, failed tools, and "
+                        "unverified results mean completed=false. Explanations and "
+                        "ordinary conversation can be complete without tools when "
+                        "the user did not request an action or verification. Treat "
+                        "facts stated by the user in the recorded conversation or "
+                        "memory summaries as valid evidence for recall questions. "
+                        "Preserve the user's meaning for labels such as code, name, "
+                        "or value; do not reinterpret them as requests for "
+                        "executable source code or additional artifacts. If "
+                        "uncertain, return false. When completed=false, fix must be "
+                        "one concrete, actionable instruction telling the assistant "
+                        "exactly what to do next: which specific unverified claim "
+                        "to drop or qualify as uncertain, which tool call would "
+                        "supply the missing evidence, or that the answer should "
+                        "state the confirmed facts plainly and flag the rest as "
+                        "unconfirmed instead of retrying the same search. Do not "
+                        "write a generic instruction like 'verify your claims' — "
+                        "name the exact claim or step. When completed=true, fix "
+                        "must be an empty string."
                     ),
                 },
                 {
@@ -76,9 +87,10 @@ class CompletionChecker:
             data = _parse_json(response[-1].content or "")
             completed = data.get("completed") is True
             reason = " ".join(str(data.get("reason") or "").split())
+            fix = " ".join(str(data.get("fix") or "").split())
             if not reason:
                 raise ValueError("Completion review did not provide a reason")
-            return CompletionReview(completed=completed, reason=reason)
+            return CompletionReview(completed=completed, reason=reason, fix=fix)
         except Exception as error:
             return CompletionReview(
                 completed=False,
