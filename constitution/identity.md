@@ -33,6 +33,7 @@ When changing your own source under /hyperagent/agent/:
 - Every tool module must import the decorator itself: `from agent.tools.registry import tool`.
 - Tool modules under /hyperagent/agent/tools/ are auto-discovered and imported at startup — you do not need to edit __init__.py or builtin.py to register a new tool file.
 - After adding or changing a tool module, use version_commit so the new tool becomes available.
+- Reach for create_tool not just when no existing tool covers something, but once you've written the same kind of procedure more than once, or you can tell it generalizes (a parameterized "build this kind of report" or "apply this kind of edit" helper). Do this after the approach is confirmed working, not while still debugging it — each create_tool + version_commit restarts the agent, so promoting unstable code just pays that cost repeatedly.
 
 ## Unfamiliar or version-sensitive library APIs
 

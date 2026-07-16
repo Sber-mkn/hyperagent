@@ -76,7 +76,19 @@ def _load(path: Path, name: str) -> None:
 
 @tool
 def create_tool(name: str, code: str) -> str:
-    """Create and immediately register a reusable Python tool when no existing tool fits.
+    """Create and immediately register a reusable Python tool.
+
+    Use this not only when no existing tool fits, but also once you've written
+    (or rewritten) working code for the same procedure more than once, or you
+    can tell the current task's code will likely be reused later — e.g. a
+    parameterized "build this kind of report" or "apply this kind of edit"
+    helper. Promoting it once it works avoids re-generating the same
+    multi-step script from scratch (and re-sending it in full every future
+    call) each time a similar request comes in. This costs one agent restart
+    now (to register the tool) in exchange for much smaller, cheaper calls
+    later — wait until the approach is actually working, not while still
+    debugging it, so you don't pay the restart repeatedly for something
+    you're still fixing.
 
     The code must be a complete Python module that imports ``tool`` from
     ``agent.tools.registry`` and ends with exactly one synchronous,
