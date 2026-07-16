@@ -1,6 +1,7 @@
 import json
 import logging
 
+from database.agent.crud import get_l3_memory, get_llmchat
 from rabbitmq.rabbitmq_service import RabbitMQBase
 
 logger = logging.getLogger(__name__)
@@ -29,13 +30,15 @@ class RabbitMQAgent(RabbitMQBase):
         self.task = None
         self.agent_session = {}
         self.chat_id = None
+        self.replayed_task = False
 
     @staticmethod
     def _agent_session_from_message(message: dict) -> dict:
-        session = message.get("agent_session") or {}
+        session = message.get("agent_session")
         return {
             "agent_type": session.get("agent_type"),
-            "agent_config": session.get("agent_config") or {},
+            "agent_config": session.get("agent_config"),
+            "chat_id": session.get("chat_id"),
         }
 
     def receive_message(self, ch, method, properties, body):
@@ -45,10 +48,11 @@ class RabbitMQAgent(RabbitMQBase):
             self.task = message.get("task")
             self.command = message.get("command", "")
             self.error_text = message.get("error_text", None)
-            self.llm_chat = message.get("llm_chat", [])
-            self.l3_memory = message.get("l3_memory")
+            self.replayed_task = bool(message.get("replayed_task"))
             self.agent_session = self._agent_session_from_message(message)
-            self.chat_id = message.get("chat_id", None)
+            self.chat_id = self.agent_session.get("chat_id")
+            self.llm_chat = get_llmchat(self.chat_id)
+            self.l3_memory = get_l3_memory(self.chat_id)
             ch.basic_ack(delivery_tag=method.delivery_tag)
             ch.stop_consuming()
 
@@ -57,7 +61,7 @@ class RabbitMQAgent(RabbitMQBase):
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
     def send_error(self, error_text, task=None):
-        message = {"type": "error", "error": error_text, "chat_id": self.chat_id}
+        message = {"type": "error", "error": error_text, "agent_session": self.agent_session}
         if task is not None:
             message["task"] = task
         logger.info("Send error: %s", message)

@@ -6,6 +6,13 @@ from contracts.git_commands import (
     GitStatusCommand,
 )
 from contracts.requests import GitRequest
+from database.agent.crud import (
+    add_client_message,
+    create_chat,
+    get_chat_history,
+    list_chats,
+    rename_chat,
+)
 from database.crud import add_error, get_snapshot_by_status, update_snapshot_status
 from supervisor.git_service import GitService
 from supervisor.rollback import start_agent
@@ -23,7 +30,7 @@ def error_handler(message: dict, git_service: GitService):
 
     snapshot = get_snapshot_by_status("PENDING")
     if snapshot:
-        snapshot_id, snapshot_sha, snapshot_message = snapshot
+        snapshot_id, _, _ = snapshot
         add_error(snapshot_id, error_text)
         update_snapshot_status(snapshot_id, "ERROR")
     stable_snapshot = get_snapshot_by_status("STABLE")
@@ -70,3 +77,30 @@ def git_handler(message: dict, git_service: GitService) -> dict | None:
         result = git_service.log()
 
     return {"stdout": result}
+
+
+def client_data_handler(message: dict) -> dict:
+    action = message["action"]
+
+    if action == "list_chats":
+        return {"chats": list_chats()}
+
+    if action == "create_chat":
+        return {"chat": create_chat(str(message["title"]))}
+
+    if action == "rename_chat":
+        return {"chat": rename_chat(int(message["chat_id"]), str(message["title"]))}
+
+    if action == "get_history":
+        return {"messages": get_chat_history(int(message["chat_id"]))}
+
+    if action == "add_client_message":
+        return {
+            "id": add_client_message(
+                int(message["chat_id"]),
+                str(message["message_type"]),
+                message["message"],
+            )
+        }
+
+    raise ValueError(f"Unknown client data action: {action}")

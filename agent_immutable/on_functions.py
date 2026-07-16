@@ -2,7 +2,7 @@ import contextlib
 import json
 
 from agent_immutable.runtime import get_rabbitmq
-from database.agent.crud import add_l3_memory, add_message
+from database.agent.crud import add_client_message, add_l3_memory, add_message
 
 SUPERVISOR_ROUTING_KEY = "supervisor"
 CLIENT_ROUTING_KEY = "client"
@@ -13,7 +13,8 @@ def on_command(command: dict) -> dict:
     command_type = command.get("type")
 
     if command_type == "git":
-        command["chat_id"] = rabbitmq.chat_id
+        command["agent_session"] = rabbitmq.agent_session
+        command["task"] = rabbitmq.task
         return rabbitmq.request_response(command, routing_key=SUPERVISOR_ROUTING_KEY)
     elif command_type == "client_command":
         return rabbitmq.request_response(command, routing_key=CLIENT_ROUTING_KEY)
@@ -50,18 +51,22 @@ def _llm_message_to_dict(message) -> dict:
 
 
 def on_think(message: str) -> None:
+    _add_client_message("think", message)
     _send_agent_message("think", message)
 
 
 def on_content(message: str) -> None:
+    _add_client_message("content", message)
     _send_agent_message("content", message)
 
 
 def on_title(title: str) -> None:
+    _add_client_message("title", title)
     _send_agent_message("title", title)
 
 
 def on_start_message(model: str) -> None:
+    _add_client_message("start", model)
     _send_agent_message("start", model)
 
 
@@ -72,7 +77,13 @@ def on_tool_call(name: str, arguments, target: str, result_preview: str) -> None
     args_text = (
         json.dumps(arguments, ensure_ascii=False) if isinstance(arguments, dict) else str(arguments)
     )
-    _send_agent_message("tool_call", f"{name}({args_text}) [{target}] -> {result_preview}")
+    message = f"{name}({args_text}) [{target}] -> {result_preview}"
+    _add_client_message("tool_call", message)
+    _send_agent_message("tool_call", message)
+
+
+def _add_client_message(message_type: str, message: dict | str) -> None:
+    add_client_message(get_rabbitmq().chat_id, message_type, message)
 
 
 def _send_agent_message(message_type: str, message: dict | str) -> None:
