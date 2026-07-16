@@ -25,7 +25,7 @@ class Tool:
     description: str
     func: Callable[..., Any]
     parameters: Dict[str, Any]                    # JSON-schema объекта параметров
-    default_target: str = "server"                # куда роутить вызов, если модель не указала target явно
+    default_target: str = "server"                # куда всегда роутится вызов этого инструмента (фиксировано)
 
     def __call__(self, **kwargs: Any) -> Any:
         return self.func(**kwargs)
@@ -107,14 +107,8 @@ def _build_schema(
         props[pname] = prop
         if p.default is inspect.Parameter.empty:
             required.append(pname)
-    props[TARGET_PARAM] = {
-        "type": "string",
-        "enum": ["server", "client"],
-        "description": (
-            f"Где выполнить инструмент (по умолчанию '{default_target}'): 'server' — в контейнере агента, "
-            "'client' — на машине пользователя, запустившей клиент."
-        ),
-    }
+    # Where a tool runs is fixed per-tool (see Tool.default_target), not a
+    # model choice -- no "target" property is exposed here.
     return {"type": "object", "properties": props, "required": required}
 
 
@@ -125,7 +119,8 @@ def tool(_func: Optional[Callable] = None, *,
          default_target: str = "server"):
     """Декоратор. Использование: @tool (всё берётся из docstring) либо
     @tool(name=..., description=..., parameters=..., default_target=...) для явного переопределения.
-    default_target="client" — для инструментов, которым нужна машина/терминал пользователя (см. ask_user)."""
+    default_target фиксирует, где инструмент ВСЕГДА выполняется — 'server' (в контейнере агента) или
+    'client' (на машине пользователя, запустившей клиент); модель этот выбор изменить не может."""
     def deco(func: Callable[..., Any]) -> Callable[..., Any]:
         doc_summary, param_docs = _parse_docstring(func.__doc__)
         t = Tool(
@@ -176,13 +171,10 @@ def truncate_middle(text: str, max_chars: int) -> str:
 
 
 def tool_target(call: Dict[str, Any]) -> str:
-    """Куда выполнить вызов: явный target из аргументов модели, иначе default_target
-    самого инструмента (см. Tool.default_target), иначе 'server'."""
+    """Куда выполнить вызов — это свойство самого инструмента (см. Tool.default_target),
+    не выбор модели: схема инструмента не содержит поля target, так что откуда бы такое
+    поле ни взялось в вызове (например, из старой истории), оно игнорируется."""
     fn = call.get("function", call)
-    args = _normalize_args(fn.get("arguments"))
-    explicit = args.get(TARGET_PARAM)
-    if explicit:
-        return explicit
     registered = _REGISTRY.get(fn.get("name"))
     return registered.default_target if registered else DEFAULT_TARGET
 

@@ -1,6 +1,7 @@
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 
@@ -235,9 +236,9 @@ def _bash_env() -> dict:
     return env
 
 
-@tool
+@tool(default_target="client")
 def run_bash(command: str, timeout: int = 60, limit: int = 4000) -> str:
-    """Выполнить команду bash и вернуть её вывод.
+    """Выполнить команду bash на машине пользователя и вернуть её вывод.
 
     Args:
         command: команда для оболочки bash.
@@ -252,6 +253,37 @@ def run_bash(command: str, timeout: int = 60, limit: int = 4000) -> str:
         )
     except FileNotFoundError:
         return "[run_bash недоступен: не найден рабочий bash]"
+    out = (proc.stdout + proc.stderr).strip()
+    out = out or f"(код возврата {proc.returncode})"
+    if proc.returncode != 0:
+        out = f"[exit {proc.returncode}] {out}"
+    return truncate_middle(out, min(limit, MAX_LIMIT_CHARS))
+
+
+def _find_powershell() -> str:
+    """Предпочитаем pwsh (PowerShell 7+), но он не гарантированно установлен на
+    машине пользователя — откатываемся на всегда присутствующий на Windows
+    powershell.exe (5.1)."""
+    return shutil.which("pwsh") or "powershell"
+
+
+@tool(default_target="client")
+def run_powershell(command: str, timeout: int = 60, limit: int = 4000) -> str:
+    """Выполнить команду PowerShell на машине пользователя и вернуть её вывод.
+
+    Args:
+        command: команда для PowerShell.
+        timeout: таймаут в секундах.
+        limit: максимум символов вывода. По умолчанию небольшой — если ожидаешь длинный вывод,
+            который весь тебе нужен (например, большой JSON), увеличивай значение (до 20000).
+    """
+    try:
+        proc = subprocess.run(
+            [_find_powershell(), "-NoProfile", "-NonInteractive", "-Command", command],
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except FileNotFoundError:
+        return "[run_powershell недоступен: PowerShell не найден]"
     out = (proc.stdout + proc.stderr).strip()
     out = out or f"(код возврата {proc.returncode})"
     if proc.returncode != 0:
