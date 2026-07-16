@@ -1,8 +1,8 @@
+import contextlib
 import json
 
 from agent_immutable.runtime import get_rabbitmq
-from database.agent.crud import add_message
-import contextlib
+from database.agent.crud import add_l3_memory, add_message
 
 SUPERVISOR_ROUTING_KEY = "supervisor"
 CLIENT_ROUTING_KEY = "client"
@@ -13,17 +13,20 @@ def on_command(command: dict) -> dict:
     command_type = command.get("type")
 
     if command_type == "git":
+        command["chat_id"] = rabbitmq.chat_id
         return rabbitmq.request_response(command, routing_key=SUPERVISOR_ROUTING_KEY)
-    elif command_type == "server_command":
-        return {}
     elif command_type == "client_command":
         return rabbitmq.request_response(command, routing_key=CLIENT_ROUTING_KEY)
     else:
         return {"error": f"Unknown command type: {command_type}"}
 
 
-def on_end_message(message) -> None:
-    add_message(_llm_message_to_dict(message))
+def on_end_message(message) -> int:
+    return add_message(_llm_message_to_dict(message), get_rabbitmq().chat_id)
+
+
+def on_l3(memory: dict) -> None:
+    add_l3_memory(memory, get_rabbitmq().chat_id)
 
 
 def _llm_message_to_dict(message) -> dict:

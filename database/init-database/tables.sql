@@ -24,6 +24,7 @@ create table errors
 create table llmchat
 (
     id serial primary key,
+    chat_id int not null,
     done boolean not null default true,
     done_reason text default null,
     role varchar(10) not null,
@@ -43,7 +44,16 @@ create table llmchat
     check (role in ('assistant', 'system', 'user', 'tool'))
 );
 
+create table l3_memory
+(
+    chat_id int primary key,
+    summary text not null,
+    created_at timestamp default current_timestamp,
+    last_message_id int not null
+);
+
 create user agent with password '12345';
 grant usage on schema public to agent;
 grant select, insert, update, delete on table llmchat to agent;
+grant select, insert, update, delete on table l3_memory to agent;
 grant usage, select on all sequences in schema public to agent;

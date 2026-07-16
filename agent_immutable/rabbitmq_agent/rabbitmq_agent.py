@@ -25,8 +25,10 @@ class RabbitMQAgent(RabbitMQBase):
         self.command = None
         self.error_text = None
         self.llm_chat = []
+        self.l3_memory = None
         self.task = None
         self.agent_session = {}
+        self.chat_id = None
 
     @staticmethod
     def _agent_session_from_message(message: dict) -> dict:
@@ -44,7 +46,9 @@ class RabbitMQAgent(RabbitMQBase):
             self.command = message.get("command", "")
             self.error_text = message.get("error_text", None)
             self.llm_chat = message.get("llm_chat", [])
+            self.l3_memory = message.get("l3_memory")
             self.agent_session = self._agent_session_from_message(message)
+            self.chat_id = message.get("chat_id", None)
             ch.basic_ack(delivery_tag=method.delivery_tag)
             ch.stop_consuming()
 
@@ -53,7 +57,7 @@ class RabbitMQAgent(RabbitMQBase):
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
     def send_error(self, error_text, task=None):
-        message = {"type": "error", "error": error_text}
+        message = {"type": "error", "error": error_text, "chat_id": self.chat_id}
         if task is not None:
             message["task"] = task
         logger.info("Send error: %s", message)
@@ -76,4 +80,11 @@ class RabbitMQAgent(RabbitMQBase):
         self.publish_message(message)
 
     def get_command(self):
-        return self.command, self.task, self.error_text, self.llm_chat, self.agent_session
+        return (
+            self.command,
+            self.task,
+            self.error_text,
+            self.llm_chat,
+            self.l3_memory,
+            self.agent_session,
+        )
