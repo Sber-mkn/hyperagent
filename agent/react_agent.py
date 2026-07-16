@@ -32,7 +32,7 @@ def build_agent(client: LLMClient) -> AgentGraph:
         feedback = state.get("completion_feedback")
         if feedback:
             chat += LLMMessage.from_message(
-                {"role": "system", "content": feedback}
+                {"role": "user", "content": feedback}
             )
         data["chat"] = chat
         data["completion_feedback"] = ""
