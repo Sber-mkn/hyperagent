@@ -3,10 +3,21 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from agent.config import AGENT_WORKDIR, CONSTITUTION_DIR
 from agent.llminterface.client.llm_chat import LLMChat, LLMMessage
 from agent.memory.store import MemoryStore, Turn
+from agent.tools.registry import truncate_middle
+
+
+# Within one still-open task, tool arguments (e.g. a full rewritten script) are
+# never truncated the way tool results are — a task with many rewrites of the
+# same tool (see: 10+ run_python rewrites while debugging an Excel chart) grows
+# the prompt without bound for the rest of that task. Keep the most recent calls
+# to a given tool at full fidelity; compact older ones.
+KEEP_FULL_TOOL_CALLS = 2
+MAX_ARGUMENTS_CHARS = 600
 
 
 class ContextManager:
@@ -24,26 +35,52 @@ class ContextManager:
         messages: list[LLMMessage | dict] = [
             {"role": "system", "content": "\n\n".join(system_parts)}
         ]
-        messages.extend(self._to_message(turn) for turn in self.store.tail)
+        messages.extend(self._build_turn_messages(self.store.tail))
         return LLMChat(messages)
 
     @staticmethod
-    def _to_message(turn: Turn) -> LLMMessage | dict:
-        if turn.role == "assistant" and turn.tool_calls:
-            return LLMMessage(
-                done=True,
-                role="assistant",
-                thinking="",
-                content=turn.content,
-                tool_calls=turn.tool_calls,
-            )
-        if turn.role == "tool":
-            return LLMMessage.tool_result(
-                turn.tool_name or "tool",
-                turn.content,
-                turn.tool_call_id,
-            )
-        return {"role": turn.role, "content": turn.content}
+    def _build_turn_messages(tail: list[Turn]) -> list[LLMMessage | dict]:
+        total_calls: dict[str, int] = {}
+        for turn in tail:
+            for call in turn.tool_calls or []:
+                name = (call.get("function") or {}).get("name")
+                if name:
+                    total_calls[name] = total_calls.get(name, 0) + 1
+
+        seen_calls: dict[str, int] = {}
+
+        def keep_full(name: str | None) -> bool:
+            if not name:
+                return True
+            seen_calls[name] = seen_calls.get(name, 0) + 1
+            remaining_after = total_calls.get(name, 0) - seen_calls[name]
+            return remaining_after < KEEP_FULL_TOOL_CALLS
+
+        messages: list[LLMMessage | dict] = []
+        for turn in tail:
+            if turn.role == "assistant" and turn.tool_calls:
+                tool_calls = [
+                    call
+                    if keep_full((call.get("function") or {}).get("name"))
+                    else _compact_call(call)
+                    for call in turn.tool_calls
+                ]
+                messages.append(
+                    LLMMessage(
+                        done=True,
+                        role="assistant",
+                        thinking="",
+                        content=turn.content,
+                        tool_calls=tool_calls,
+                    )
+                )
+            elif turn.role == "tool":
+                messages.append(
+                    LLMMessage.tool_result(turn.tool_name or "tool", turn.content, turn.tool_call_id)
+                )
+            else:
+                messages.append({"role": turn.role, "content": turn.content})
+        return messages
 
     @staticmethod
     def _constitution() -> str:
@@ -70,3 +107,18 @@ class ContextManager:
             "create or modify Python files under agent/skills manually. "
             "When finished, answer plainly without another tool call."
         )
+
+
+def _compact_call(call: dict[str, Any]) -> dict[str, Any]:
+    function = call.get("function") or {}
+    arguments = function.get("arguments")
+    if not isinstance(arguments, str) or len(arguments) <= MAX_ARGUMENTS_CHARS:
+        return call
+
+    compacted = dict(call)
+    compacted["function"] = {
+        **function,
+        "arguments": truncate_middle(arguments, MAX_ARGUMENTS_CHARS)
+        + " [earlier attempt in this task, truncated for context]",
+    }
+    return compacted
