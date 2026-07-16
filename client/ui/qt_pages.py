@@ -270,9 +270,9 @@ class SettingsPage(QWidget):
         super().__init__()
         self.model_group = QButtonGroup(self)
         self.theme_group = QButtonGroup(self)
-        self.local_radio = QRadioButton("Local models (auto)")
+        self.local_radio = QRadioButton("Server model")
         self.openrouter_radio = QRadioButton("OpenRouter")
-        self.ollama_radio = QRadioButton("User local model (Ollama)")
+        self.ollama_radio = QRadioButton("Local Ollama")
         self.openrouter_api_input = QLineEdit()
         self.openrouter_model_combo = QComboBox()
         self.openrouter_refresh_button = QPushButton("↻")
@@ -742,9 +742,9 @@ class ChatPage(QWidget):
         self.model_button.setCursor(Qt.CursorShape.PointingHandCursor)
         model_menu = QMenu(self.model_button)
         for label, value in (
-            ("Local models (auto)", MODEL_LOCAL),
+            ("Server model", MODEL_LOCAL),
             ("OpenRouter", MODEL_OPENROUTER),
-            ("User local model (Ollama)", MODEL_OLLAMA),
+            ("Local Ollama", MODEL_OLLAMA),
         ):
             action = QAction(label, self.model_button)
             action.triggered.connect(
