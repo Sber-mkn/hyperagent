@@ -27,11 +27,13 @@ from agent.react_agent import build_agent
 from agent.skills import SkillManager
 from agent.tools import tools_spec
 
-AGENT_TYPE_TO_PROVIDER = {"local": "ollama", "api": "openai", "ollama": "ollama"}
+AGENT_TYPE_TO_PROVIDER = {"local": "ollama", "api": "openai", "ollama": "ollama", "openai": "openai"}
 # The client's "api" session type is branded as OpenRouter (it collects an
 # OPENROUTER_API_KEY, not an OpenAI one) — default its base_url to OpenRouter's
 # real endpoint rather than falling through to OPENAI_BASE_URL's default of
-# api.openai.com, which rejects OpenRouter keys outright.
+# api.openai.com, which rejects OpenRouter keys outright. The distinct
+# "openai" session type is real OpenAI and uses OPENAI_BASE_URL/OPENAI_API_KEY
+# as-is (its default is already api.openai.com).
 OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
 
@@ -112,12 +114,14 @@ def _build_client(
             "num_predict": MAX_OUTPUT_TOKENS,
         }
     if provider in {"openai", "openrouter", "api"}:
-        base_url = OPENROUTER_DEFAULT_BASE_URL if agent_type == "api" else OPENAI_BASE_URL
+        if agent_type == "api":
+            base_url = OPENROUTER_DEFAULT_BASE_URL
+            api_key = agent_config.get("OPENROUTER_API_KEY") or OPENAI_API_KEY
+        else:
+            base_url = OPENAI_BASE_URL
+            api_key = agent_config.get("OPENAI_API_KEY") or OPENAI_API_KEY
         return (
-            OpenaiClient(
-                base_url=base_url,
-                api_key=agent_config.get("OPENROUTER_API_KEY") or OPENAI_API_KEY,
-            ),
+            OpenaiClient(base_url=base_url, api_key=api_key),
             {"max_tokens": MAX_OUTPUT_TOKENS},
         )
     raise ValueError(f"Unsupported LLM_PROVIDER: {provider}")

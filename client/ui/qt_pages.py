@@ -33,9 +33,14 @@ from client.core.client_state import (
     HYPER_OLLAMA_URL,
     MODEL_LOCAL,
     MODEL_OLLAMA,
+    MODEL_OPENAI,
     MODEL_OPENROUTER,
 )
-from client.core.model_catalog import fetch_ollama_models, fetch_openrouter_models
+from client.core.model_catalog import (
+    fetch_ollama_models,
+    fetch_openai_models,
+    fetch_openrouter_models,
+)
 from client.ui.qt_blocks import CommandGroupBlock, PaperPlaneButton, StreamTextBlock
 
 
@@ -273,14 +278,17 @@ class SettingsPage(QWidget):
         self.local_radio = QRadioButton("Hyper")
         self.openrouter_radio = QRadioButton("OpenRouter")
         self.ollama_radio = QRadioButton("Local Ollama")
+        self.openai_radio = QRadioButton("OpenAI")
         self.openrouter_api_input = QLineEdit()
         self.ollama_url_input = QLineEdit()
+        self.openai_api_input = QLineEdit()
         self.dark_radio = QRadioButton("Dark")
         self.light_radio = QRadioButton("Light")
         self.back_button = QPushButton("Back")
         self.save_button = QPushButton("Save")
         self.openrouter_frame = QFrame()
         self.ollama_frame = QFrame()
+        self.openai_frame = QFrame()
         self._build()
 
     def set_settings(self, settings: dict[str, Any], focus_model: str | None = None) -> None:
@@ -288,8 +296,10 @@ class SettingsPage(QWidget):
         self.local_radio.setChecked(model == MODEL_LOCAL)
         self.openrouter_radio.setChecked(model == MODEL_OPENROUTER)
         self.ollama_radio.setChecked(model == MODEL_OLLAMA)
+        self.openai_radio.setChecked(model == MODEL_OPENAI)
         self.openrouter_api_input.setText(str(settings.get("openrouter_api_key") or ""))
         self.ollama_url_input.setText(str(settings.get("ollama_url") or ""))
+        self.openai_api_input.setText(str(settings.get("openai_api_key") or ""))
         self.dark_radio.setChecked(settings.get("theme") != "light")
         self.light_radio.setChecked(settings.get("theme") == "light")
         self._sync_model_fields()
@@ -323,15 +333,18 @@ class SettingsPage(QWidget):
         self.model_group.addButton(self.local_radio)
         self.model_group.addButton(self.openrouter_radio)
         self.model_group.addButton(self.ollama_radio)
-        for radio in (self.local_radio, self.openrouter_radio, self.ollama_radio):
+        self.model_group.addButton(self.openai_radio)
+        for radio in (self.local_radio, self.openrouter_radio, self.ollama_radio, self.openai_radio):
             radio.setObjectName("settingsRadio")
             radio.toggled.connect(self._sync_model_fields)
             layout.addWidget(radio)
 
         self._build_openrouter_frame()
         self._build_ollama_frame()
+        self._build_openai_frame()
         layout.addWidget(self.openrouter_frame)
         layout.addWidget(self.ollama_frame)
+        layout.addWidget(self.openai_frame)
 
         layout.addWidget(_settings_section_title("Theme"))
         self.theme_group.addButton(self.dark_radio)
@@ -371,9 +384,21 @@ class SettingsPage(QWidget):
         layout.addWidget(url_label)
         layout.addWidget(self.ollama_url_input)
 
+    def _build_openai_frame(self) -> None:
+        self.openai_frame.setObjectName("settingsPanel")
+        layout = QVBoxLayout(self.openai_frame)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(8)
+        api_label = QLabel("OpenAI API key")
+        api_label.setObjectName("inputLabel")
+        self.openai_api_input.setPlaceholderText("sk-...")
+        layout.addWidget(api_label)
+        layout.addWidget(self.openai_api_input)
+
     def _sync_model_fields(self, _checked: bool = False) -> None:
         self.openrouter_frame.setVisible(self.openrouter_radio.isChecked())
         self.ollama_frame.setVisible(self.ollama_radio.isChecked())
+        self.openai_frame.setVisible(self.openai_radio.isChecked())
 
     def settings(self) -> dict[str, Any]:
         model = MODEL_LOCAL
@@ -381,10 +406,13 @@ class SettingsPage(QWidget):
             model = MODEL_OPENROUTER
         elif self.ollama_radio.isChecked():
             model = MODEL_OLLAMA
+        elif self.openai_radio.isChecked():
+            model = MODEL_OPENAI
         return {
             "model": model,
             "openrouter_api_key": self.openrouter_api_input.text().strip(),
             "ollama_url": self.ollama_url_input.text().strip(),
+            "openai_api_key": self.openai_api_input.text().strip(),
             "theme": "light" if self.light_radio.isChecked() else "dark",
         }
 
@@ -393,6 +421,7 @@ _PROVIDER_LABELS = {
     MODEL_LOCAL: "Hyper",
     MODEL_OPENROUTER: "OpenRouter",
     MODEL_OLLAMA: "Local Ollama",
+    MODEL_OPENAI: "OpenAI",
 }
 
 
@@ -420,16 +449,22 @@ class ChatPage(QWidget):
         self._current_response_model: str | None = None
         self._command_groups: dict[str, CommandGroupBlock] = {}
         self._current_provider = MODEL_LOCAL
-        self._provider_context: dict[str, str] = {"ollama_url": "", "openrouter_api_key": ""}
+        self._provider_context: dict[str, str] = {
+            "ollama_url": "",
+            "openrouter_api_key": "",
+            "openai_api_key": "",
+        }
         self._model_by_provider: dict[str, str] = {
             MODEL_LOCAL: "",
             MODEL_OPENROUTER: "",
             MODEL_OLLAMA: "",
+            MODEL_OPENAI: "",
         }
         self._available_models: dict[str, list[str]] = {
             MODEL_LOCAL: [],
             MODEL_OPENROUTER: [],
             MODEL_OLLAMA: [],
+            MODEL_OPENAI: [],
         }
         self._fetched_providers: set[str] = set()
         self._models_fetched.connect(self._on_models_fetched)
@@ -488,6 +523,7 @@ class ChatPage(QWidget):
             new_context = {
                 "ollama_url": str(settings.get("ollama_url") or ""),
                 "openrouter_api_key": str(settings.get("openrouter_api_key") or ""),
+                "openai_api_key": str(settings.get("openai_api_key") or ""),
             }
             context_changed = new_context != self._provider_context
             self._provider_context = new_context
@@ -495,6 +531,7 @@ class ChatPage(QWidget):
                 MODEL_LOCAL: str(settings.get("local_model") or ""),
                 MODEL_OPENROUTER: str(settings.get("openrouter_model") or ""),
                 MODEL_OLLAMA: str(settings.get("ollama_model") or ""),
+                MODEL_OPENAI: str(settings.get("openai_model") or ""),
             }
         provider_changed = model != self._current_provider
         self._current_provider = model
@@ -583,6 +620,17 @@ class ChatPage(QWidget):
 
             def fetch_fn() -> list[str]:
                 return fetch_openrouter_models(api_key)
+        elif provider == MODEL_OPENAI:
+            api_key = self._provider_context.get("openai_api_key") or ""
+            if not api_key:
+                # Unlike OpenRouter, OpenAI requires a key just to list
+                # models -- an unconfigured key can only ever show "No
+                # models", not a real (or borrowed) list.
+                self._models_fetched.emit(provider, [])
+                return
+
+            def fetch_fn() -> list[str]:
+                return fetch_openai_models(api_key)
         else:
 
             def fetch_fn() -> list[str]:
@@ -822,6 +870,7 @@ class ChatPage(QWidget):
             ("Hyper", MODEL_LOCAL),
             ("OpenRouter", MODEL_OPENROUTER),
             ("Local Ollama", MODEL_OLLAMA),
+            ("OpenAI", MODEL_OPENAI),
         ):
             action = QAction(label, self.provider_button)
             action.triggered.connect(

@@ -9,6 +9,7 @@ NEW_CHAT_TITLE = "New Chat"
 MODEL_LOCAL = "local"
 MODEL_OPENROUTER = "openrouter"
 MODEL_OLLAMA = "ollama"
+MODEL_OPENAI = "openai"
 # The zero-config default provider ("Server model") is user-facing as "Hyper".
 # It talks to the same Ollama instance the agent container itself defaults to
 # (reachable from the client host at this fixed address), so its model list
@@ -25,6 +26,8 @@ DEFAULT_SETTINGS = {
     "openrouter_model": "",
     "ollama_url": "",
     "ollama_model": "",
+    "openai_api_key": "",
+    "openai_model": "",
     "theme": "dark",
     "access": ACCESS_ASK,
 }

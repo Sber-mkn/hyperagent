@@ -10,6 +10,7 @@ from client.core.client_state import (
     HYPER_OLLAMA_URL,
     MODEL_LOCAL,
     MODEL_OLLAMA,
+    MODEL_OPENAI,
     MODEL_OPENROUTER,
     NEW_CHAT_TITLE,
     ClientState,
@@ -200,6 +201,8 @@ class ChatController:
             settings["openrouter_model"] = model_name
         elif model == MODEL_OLLAMA:
             settings["ollama_model"] = model_name
+        elif model == MODEL_OPENAI:
+            settings["openai_model"] = model_name
         elif model == MODEL_LOCAL:
             settings["local_model"] = model_name
         self.save_settings(settings)
@@ -218,6 +221,8 @@ class ChatController:
             return bool(settings["openrouter_api_key"])
         if model == MODEL_OLLAMA:
             return bool(settings["ollama_url"])
+        if model == MODEL_OPENAI:
+            return bool(settings["openai_api_key"])
         return True
 
     def model_configured(self, model: str) -> bool:
@@ -227,6 +232,8 @@ class ChatController:
             return bool(settings["openrouter_api_key"] and settings["openrouter_model"])
         if model == MODEL_OLLAMA:
             return bool(settings["ollama_url"] and settings["ollama_model"])
+        if model == MODEL_OPENAI:
+            return bool(settings["openai_api_key"] and settings["openai_model"])
         return True
 
     def model_fetch_url(self, model: str) -> str:
@@ -254,6 +261,12 @@ class ChatController:
             agent_config = {
                 "OLLAMA_URL": settings["ollama_url"],
                 "AGENT_MODEL": settings.get("ollama_model") or "auto",
+            }
+        elif model == MODEL_OPENAI:
+            agent_type = "openai"
+            agent_config = {
+                "OPENAI_API_KEY": settings["openai_api_key"],
+                "AGENT_MODEL": settings["openai_model"],
             }
 
         access = settings.get("access") or ACCESS_ASK
