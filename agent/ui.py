@@ -48,10 +48,7 @@ def on_tool_call(name: str, arguments: Any, target: str, result_preview: str) ->
 def on_end_message(message: LLMMessage) -> None:
     print("\nMessage finished")
     if message.tokens:
-        print(
-            f"Tokens: prompt={message.tokens.prompt}, "
-            f"response={message.tokens.response}"
-        )
+        print(f"Tokens: prompt={message.tokens.prompt}, response={message.tokens.response}")
     if message.duration:
         print(
             f"Time: load={message.duration.load}, "

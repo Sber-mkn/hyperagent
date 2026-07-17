@@ -1,11 +1,13 @@
-from agent.llminterface.agent_chain.executable import Executable, MISSING
-from typing import List, Any, Callable
+from collections.abc import Callable
 from functools import partial
+from typing import Any
+
+from agent.llminterface.agent_chain.executable import MISSING, Executable
+
 
 class ExecSequence(Executable):
-
     def __init__(self, *nodes: Executable):
-        self._nodes: List[Executable] = []
+        self._nodes: list[Executable] = []
 
         for node in nodes:
             if isinstance(node, ExecSequence):
@@ -23,7 +25,6 @@ class ExecSequence(Executable):
             else:
                 result = node.run(result)
         return result
-
 
     def stream(self, _input: Any = MISSING):
         first = _input is MISSING
@@ -46,7 +47,6 @@ class ExecParallel(Executable):
             return {k: b.run(_input) for k, b in self._branches.items()}
         else:
             return {k: b.run() for k, b in self._branches.items()}
-
 
     def stream(self, _input: Any = MISSING):
         if _input is not MISSING:
@@ -91,9 +91,7 @@ class ExecMultiargument(Executable):
         elif callable(self._target):
             func = self._target
         else:
-            raise TypeError(
-                f"{type(self._target)} нельзя вызывать через ExecMultiargument"
-            )
+            raise TypeError(f"{type(self._target)} нельзя вызывать через ExecMultiargument")
 
         if isinstance(_input, dict):
             return func(**_input)

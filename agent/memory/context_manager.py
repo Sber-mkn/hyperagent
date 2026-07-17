@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from agent.config import AGENT_WORKDIR, CONSTITUTION_DIR
 from agent.llminterface.client.llm_chat import LLMChat, LLMMessage
 from agent.memory.store import MemoryStore, Turn
 from agent.tools.registry import truncate_middle
-
 
 # Within one still-open task, tool arguments (e.g. a full rewritten script) are
 # never truncated the way tool results are — a task with many rewrites of the
@@ -76,7 +75,9 @@ class ContextManager:
                 )
             elif turn.role == "tool":
                 messages.append(
-                    LLMMessage.tool_result(turn.tool_name or "tool", turn.content, turn.tool_call_id)
+                    LLMMessage.tool_result(
+                        turn.tool_name or "tool", turn.content, turn.tool_call_id
+                    )
                 )
             else:
                 messages.append({"role": turn.role, "content": turn.content})
@@ -91,7 +92,7 @@ class ContextManager:
 
     @staticmethod
     def _runtime_guidance() -> str:
-        current_date = datetime.now(timezone.utc).date().isoformat()
+        current_date = datetime.now(UTC).date().isoformat()
         return (
             f"The authoritative current runtime date is {current_date} UTC. "
             "Use this date even if conversation history, memory summaries, or "

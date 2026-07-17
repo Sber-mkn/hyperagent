@@ -5,10 +5,11 @@ import shutil
 import subprocess
 import sys
 
-from agent.tools.registry import tool, truncate_middle
 from agent.tools import registry
+from agent.tools.registry import tool, truncate_middle
 
 MAX_LIMIT_CHARS = 20000  # потолок, выше которого limit не поднять ни одним инструментом — защита от совсем неадекватных запросов
+
 
 def _find_bash() -> str:
     """На Windows голое имя 'bash' из PATH может резолвиться в лаунчер WSL
@@ -43,19 +44,19 @@ def _find_bash() -> str:
     return "bash"  # ничего не нашли — пробуем как есть, пусть падает с понятной ошибкой
 
 
-
-
 def _html_to_text(html: str) -> str:
     """Вытащить видимый текст: убрать скрипты/стили/теги, схлопнуть пустоты.
     Так лимит расходуется на содержимое, а не на <head>/<script>."""
     try:
         from bs4 import BeautifulSoup
+
         soup = BeautifulSoup(html, "html.parser")
         for tag in soup(["script", "style", "noscript", "template", "svg", "head"]):
             tag.decompose()
         text = soup.get_text("\n")
-    except ImportError:                                # fallback без bs4
+    except ImportError:  # fallback без bs4
         import html as _html
+
         html = re.sub(r"(?is)<(script|style|noscript|template|svg|head)\b.*?</\1>", " ", html)
         text = _html.unescape(re.sub(r"(?s)<[^>]+>", " ", html))
     lines = (ln.strip() for ln in text.splitlines())
@@ -71,7 +72,7 @@ def web_search(query: str, limit: int = 5) -> str:
         limit: сколько результатов вернуть.
     """
     from ddgs import DDGS
-    from ddgs.exceptions import RatelimitException, TimeoutException, DDGSException
+    from ddgs.exceptions import DDGSException, RatelimitException, TimeoutException
 
     try:
         hits = DDGS().text(query, max_results=limit)
@@ -108,11 +109,16 @@ def fetch_url(url: str, limit: int = 4000) -> str:
             увеличивай значение (до 20000).
     """
     import requests
+
     limit = min(limit, MAX_LIMIT_CHARS)
     r = requests.get(url, headers={"User-Agent": "agent/1.0"}, timeout=30)
     r.raise_for_status()
     text = _html_to_text(r.text)
-    return truncate_middle(text, limit) if text else "(на странице нет текстового содержимого — вероятно, JS-рендеринг; попробуй fetch_url_render)"
+    return (
+        truncate_middle(text, limit)
+        if text
+        else "(на странице нет текстового содержимого — вероятно, JS-рендеринг; попробуй fetch_url_render)"
+    )
 
 
 @tool
@@ -176,10 +182,10 @@ def read_file(path: str, start: int = 1, end: int = 0) -> str:
         start: номер первой строки для чтения (нумерация с 1, по умолчанию с начала файла).
         end: номер последней строки для чтения включительно (по умолчанию 0 — до конца файла).
     """
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         lines = f.readlines()
     end_idx = end if end > 0 else len(lines)
-    return "".join(lines[max(start - 1, 0):end_idx])
+    return "".join(lines[max(start - 1, 0) : end_idx])
 
 
 @tool
@@ -190,7 +196,7 @@ def file_length(path: str) -> str:
     Args:
         path: путь к файлу.
     """
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         content = f.read()
     lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
     return f"{lines} строк, {len(content)} символов"
@@ -218,7 +224,7 @@ def change_file(path: str, old: str, new: str) -> str:
         old: искомая подстрока.
         new: чем заменить.
     """
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         data = f.read()
     if old not in data:
         return f"Подстрока не найдена в {path}"
@@ -234,7 +240,9 @@ def _bash_env() -> dict:
     поставленный через 'pip install' в run_bash, может быть не виден из run_python."""
     env = os.environ.copy()
     python_dir = os.path.dirname(sys.executable)
-    env["PATH"] = os.pathsep.join([python_dir, os.path.join(python_dir, "Scripts"), env.get("PATH", "")])
+    env["PATH"] = os.pathsep.join(
+        [python_dir, os.path.join(python_dir, "Scripts"), env.get("PATH", "")]
+    )
     return env
 
 
@@ -251,7 +259,10 @@ def run_bash(command: str, timeout: int = 60, limit: int = 4000) -> str:
     try:
         proc = subprocess.run(
             [_find_bash(), "-lc", command],
-            capture_output=True, text=True, timeout=timeout, env=_bash_env(),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=_bash_env(),
         )
     except FileNotFoundError:
         return "[run_bash недоступен: не найден рабочий bash]"
@@ -282,7 +293,9 @@ def run_powershell(command: str, timeout: int = 60, limit: int = 4000) -> str:
     try:
         proc = subprocess.run(
             [_find_powershell(), "-NoProfile", "-NonInteractive", "-Command", command],
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
         )
     except FileNotFoundError:
         return "[run_powershell недоступен: PowerShell не найден]"
@@ -305,7 +318,9 @@ def run_python(code: str, timeout: int = 60, limit: int = 4000) -> str:
     """
     proc = subprocess.run(
         [sys.executable, "-c", code],
-        capture_output=True, text=True, timeout=timeout,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     out = (proc.stdout + proc.stderr).strip()
     out = out or "(нет вывода)"
@@ -327,13 +342,10 @@ def version_commit(message: str):
     Args:
         message: сообщение, которое описывает изменения в версии.
     """
-    return registry.on_command({
-        "type": "git",
-        "command": {
-            "command": "commit",
-            "message": message
-        }
-    })
+    return registry.on_command(
+        {"type": "git", "command": {"command": "commit", "message": message}}
+    )
+
 
 @tool
 def version_status() -> str:
@@ -348,12 +360,7 @@ def version_status() -> str:
     - D — удален, но удаление не добавлено в индекс.
     - ?? — неотслеживаемый (новый) файл.
     """
-    return registry.on_command({
-        "type": "git",
-        "command": {
-            "command": "status"
-        }
-    })
+    return registry.on_command({"type": "git", "command": {"command": "status"}})
 
 
 @tool
@@ -370,12 +377,7 @@ def version_diff():
         Левая часть (-84,7): относится к исходному файлу. Показывает, что фрагмент начинается со строки номер 84 и включает в себя 7 строк.
         Правая часть (+84,5): относится к новому файлу. Показывает, что этот фрагмент начинается со строки 84 и охватывает уже 5 строк.
     """
-    return registry.on_command({
-        "type": "git",
-        "command": {
-            "command": "diff"
-        }
-    })
+    return registry.on_command({"type": "git", "command": {"command": "diff"}})
 
 
 @tool
@@ -404,13 +406,7 @@ def version_diff_hash(_hash: str) -> str:
     Args:
         _hash: хэш версии сервера (агента), с которой нужно сравнить текущую версию.
     """
-    return registry.on_command({
-        "type": "git",
-        "command": {
-            "command": "diff",
-            "hash": _hash
-        }
-    })
+    return registry.on_command({"type": "git", "command": {"command": "diff", "hash": _hash}})
 
 
 @tool
@@ -418,12 +414,7 @@ def version_log() -> str:
     """Возвращает список версий агента в формате "<хэш версии> <описание изменений>". Все версии которые выводятся с помощью данного инструмента 100% являются стабильными.
     Данный инструмент следует использовать перед просмотром изменений относительно определённой версии (с помощью инструмента version_diff_hash) или для отката к определённой версии с помощью инструмента version_rollback.
     """
-    return registry.on_command({
-        "type": "git",
-        "command": {
-            "command": "log"
-        }
-    })
+    return registry.on_command({"type": "git", "command": {"command": "log"}})
 
 
 @tool
@@ -435,10 +426,6 @@ def version_rollback(_hash: str) -> str:
     Args:
         _hash: хэш версии сервера (агента), на которую следует откатиться.
     """
-    return registry.on_command({
-        "type": "git",
-        "command": {
-            "command": "rollback",
-            "target_sha": _hash
-        }
-    })
+    return registry.on_command(
+        {"type": "git", "command": {"command": "rollback", "target_sha": _hash}}
+    )

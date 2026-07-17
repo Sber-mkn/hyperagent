@@ -1,6 +1,7 @@
-from typing import Any, Callable, Dict, Iterator, Optional
+from collections.abc import Callable, Iterator
+from typing import Any
 
-Reducer = Callable[[Any, Any], Any]      # (старое, новое) -> итог
+Reducer = Callable[[Any, Any], Any]  # (старое, новое) -> итог
 
 
 class AgentState:
@@ -13,12 +14,12 @@ class AgentState:
     """
 
     def __init__(
-            self,
-            values: Optional[Dict[str, Any]] = None,
-            reducers: Optional[Dict[str, Reducer]] = None,
+        self,
+        values: dict[str, Any] | None = None,
+        reducers: dict[str, Reducer] | None = None,
     ):
-        self._values: Dict[str, Any] = dict(values or {})
-        self._reducers: Dict[str, Reducer] = dict(reducers or {})
+        self._values: dict[str, Any] = dict(values or {})
+        self._reducers: dict[str, Reducer] = dict(reducers or {})
 
     def __getitem__(self, key: str) -> Any:
         return self._values[key]
@@ -32,14 +33,14 @@ class AgentState:
     def __iter__(self) -> Iterator[str]:
         return iter(self._values)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return dict(self._values)
 
-    def set_reducer(self, key: str, reducer: Reducer) -> "AgentState":
+    def set_reducer(self, key: str, reducer: Reducer) -> AgentState:
         self._reducers[key] = reducer
         return self
 
-    def merge(self, updates: Dict[str, Any]) -> "AgentState":
+    def merge(self, updates: dict[str, Any]) -> AgentState:
         for key, new in updates.items():
             if key in self._reducers and key in self._values:
                 self._values[key] = self._reducers[key](self._values[key], new)

@@ -3,10 +3,16 @@ import logging
 import pkgutil
 
 from agent.tools.registry import (
-    Tool, tool, get_tool, all_tools, tools_spec, run_tool_calls, truncate_middle,
-    execute_tool, tool_target,
+    Tool,
+    all_tools,
+    execute_tool,
+    get_tool,
+    run_tool_calls,
+    tool,
+    tool_target,
+    tools_spec,
+    truncate_middle,
 )
-from agent.tools import builtin
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +29,13 @@ for _module_info in pkgutil.iter_modules(__path__):
 del _module_info
 
 __all__ = [
-    "Tool", "tool", "get_tool", "all_tools", "tools_spec", "run_tool_calls", "truncate_middle",
-    "execute_tool", "tool_target",
+    "Tool",
+    "all_tools",
+    "execute_tool",
+    "get_tool",
+    "run_tool_calls",
+    "tool",
+    "tool_target",
+    "tools_spec",
+    "truncate_middle",
 ]

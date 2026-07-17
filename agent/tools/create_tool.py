@@ -11,7 +11,6 @@ from pathlib import Path
 
 from agent.tools.registry import all_tools, tool
 
-
 logger = logging.getLogger(__name__)
 GENERATED_DIR = Path(__file__).with_name("generated")
 TOOL_NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")

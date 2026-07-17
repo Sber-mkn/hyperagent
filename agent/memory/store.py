@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 from agent.config import L2_TOKEN_BUDGET
-
 
 Role = Literal["user", "assistant", "tool"]
 
@@ -40,7 +40,7 @@ class Turn:
         return data
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Turn":
+    def from_dict(cls, data: dict[str, Any]) -> Turn:
         return cls(
             role=data["role"],
             content=data.get("content", ""),
@@ -52,7 +52,7 @@ class Turn:
         )
 
     @classmethod
-    def from_llm_message(cls, message: dict[str, Any]) -> "Turn | None":
+    def from_llm_message(cls, message: dict[str, Any]) -> Turn | None:
         role = message.get("role")
         if role not in {"user", "assistant", "tool"}:
             return None
@@ -93,7 +93,7 @@ class MemoryStore:
         messages: list[dict[str, Any]] | None,
         l2_token_budget: int = L2_TOKEN_BUDGET,
         l3_memory: dict[str, Any] | None = None,
-    ) -> "MemoryStore":
+    ) -> MemoryStore:
         history = list(messages or [])
         if history and all(message.get("dt") for message in history):
             history.sort(key=lambda message: str(message["dt"]))
@@ -104,8 +104,7 @@ class MemoryStore:
             history = [
                 message
                 for message in history
-                if (message_id := _message_id(message.get("id"))) is None
-                or message_id > watermark
+                if (message_id := _message_id(message.get("id"))) is None or message_id > watermark
             ]
 
         turns = [Turn.from_llm_message(message) for message in history]
@@ -136,7 +135,7 @@ class MemoryStore:
 
     def current_exchange(self) -> list[Turn]:
         """Return the latest user task and all turns produced for it."""
-        return list(self.tail[self._current_turn_start():])
+        return list(self.tail[self._current_turn_start() :])
 
     def _current_turn_start(self) -> int:
         """Index of the latest user message; turns from here stay uncompressed."""
@@ -161,9 +160,7 @@ class MemoryStore:
                 break
 
             message_ids = [
-                turn.message_id
-                for turn in self.tail[start:end]
-                if turn.message_id is not None
+                turn.message_id for turn in self.tail[start:end] if turn.message_id is not None
             ]
             if message_ids:
                 self.last_compressed_message_id = max(message_ids)
@@ -196,5 +193,5 @@ class MemoryStore:
 def _message_id(value: Any) -> int | None:
     try:
         return int(value) if value is not None else None
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None

@@ -12,7 +12,7 @@ def insert_text(path: str, content: str, line: int = 0) -> str:
         line: номер строки, перед которой нужно вставить текст (нумерация с 1, как в read_file).
             По умолчанию 0 — дописать в конец файла.
     """
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         lines = f.readlines()
 
     if content and not content.endswith("\n"):
