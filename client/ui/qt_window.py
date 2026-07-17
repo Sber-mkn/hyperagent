@@ -1,5 +1,6 @@
 import contextlib
 import threading
+from pathlib import Path
 from typing import Any, override
 
 from PyQt6.QtCore import QByteArray, QObject, Qt, QTimer, pyqtSignal
@@ -24,6 +25,7 @@ class CommandPermissionRequest:
 
 
 class ClientEventBridge(QObject):
+    login_connected = pyqtSignal(object)
     ready = pyqtSignal()
     result = pyqtSignal(object)
     agent_message = pyqtSignal(str, object)
@@ -70,13 +72,14 @@ class ClientEventBridge(QObject):
 
 
 class HyperagentClientWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, data_dir: str | Path | None = None) -> None:
         super().__init__()
-        self.state = ClientState()
+        self.state = ClientState(data_dir=data_dir)
         self.controller = ChatController(self.state)
         self.client: RabbitMQClient | None = None
         self.bridge: ClientEventBridge | None = None
         self.consumer_stop_event: threading.Event | None = None
+        self.login_thread: threading.Thread | None = None
         self.settings_return_widget = None
         self.logged_in = False
 
@@ -136,6 +139,7 @@ class HyperagentClientWindow(QMainWindow):
         self.controller.begin_login(login, password)
 
         self.bridge = ClientEventBridge()
+        self.bridge.login_connected.connect(self._on_login_connected)
         self.bridge.ready.connect(self._on_ready)
         self.bridge.result.connect(self._on_result)
         self.bridge.agent_message.connect(self._on_agent_message)
@@ -147,20 +151,42 @@ class HyperagentClientWindow(QMainWindow):
         self.bridge.client_command_result.connect(self._on_client_command_result)
         self.bridge.command_permission_requested.connect(self._on_command_permission_requested)
 
-        try:
-            self.client = RabbitMQClient(event_handler=self.bridge)
-            self.controller.attach_client(self.client)
-            self.client.send_login(login, password)
-        except Exception:
-            self.login_page.show_error("Сервис временно недоступен.")
-            self.client = None
-            self.controller.detach_client()
-            return
+        agent_session = self.controller.agent_session()
+        self.login_thread = threading.Thread(
+            target=self._connect_login,
+            args=(login, password, agent_session, self.bridge),
+            daemon=True,
+        )
+        self.login_thread.start()
 
+    def _connect_login(
+        self,
+        login: str,
+        password: str,
+        agent_session: dict[str, Any],
+        bridge: ClientEventBridge,
+    ) -> None:
+        client = None
+        try:
+            client = RabbitMQClient(event_handler=bridge)
+            client.agent_session = agent_session
+            if client.send_login(login, password):
+                bridge.login_connected.emit(client)
+                return
+        except Exception:
+            bridge.service_unavailable.emit("Сервис временно недоступен.")
+
+        if client is not None:
+            with contextlib.suppress(Exception):
+                client.connection.close()
+
+    def _on_login_connected(self, client: RabbitMQClient) -> None:
+        self.client = client
+        self.controller.attach_client(client)
         self.consumer_stop_event = threading.Event()
         consumer_thread = threading.Thread(
             target=self._consume,
-            args=(self.client, self.bridge, self.consumer_stop_event),
+            args=(client, self.bridge, self.consumer_stop_event),
             daemon=True,
         )
         consumer_thread.start()
@@ -290,9 +316,12 @@ class HyperagentClientWindow(QMainWindow):
         self._refresh_chats()
 
     def _logout(self) -> None:
+        client = self.client
         self.logged_in = False
         self.controller.logout()
         self._close_client()
+        if client is not None:
+            client.send_logout()
         self.login_page.clear_credentials()
         self.login_page.set_busy(False)
         self.stack.setCurrentWidget(self.login_page)
@@ -452,6 +481,9 @@ class HyperagentClientWindow(QMainWindow):
 
     @override
     def closeEvent(self, event) -> None:
+        client = self.client
         self._save_window_placement()
         self._close_client()
+        if client is not None:
+            client.send_logout()
         super().closeEvent(event)

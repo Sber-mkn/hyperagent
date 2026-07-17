@@ -23,8 +23,8 @@ DEFAULT_SETTINGS = {
 
 
 class ClientState:
-    def __init__(self):
-        self.path = _state_path()
+    def __init__(self, data_dir: str | Path | None = None):
+        self.path = _state_path(data_dir)
         self.data = self._load()
         self.data.setdefault("session", None)
         self.data.setdefault("current_chat_id", 0)
@@ -93,7 +93,9 @@ class ClientState:
             return {}
 
 
-def _state_path() -> Path:
+def _state_path(data_dir: str | Path | None = None) -> Path:
+    if data_dir is not None:
+        return Path(data_dir) / "client_state.json"
     base = os.getenv("APPDATA") or os.getenv("LOCALAPPDATA")
     if base:
         return Path(base) / "Hyperagent" / "client_state.json"

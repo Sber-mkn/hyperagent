@@ -124,6 +124,7 @@ def agent_logic(
     on_title: Callable[[str], Any] | None = None,
     on_tool: Callable[[dict[str, Any]], Any] | None = None,
     on_tool_call: Callable[[str, Any, str, str], Any] | None = None,
+    on_error: Callable[[str], Any] | None = None,
     on_start_message: Callable[[str], Any] | None = None,
     on_l3: Callable[[dict[str, Any]], Any] | None = None,
     agent_session: dict[str, Any] | None = None,

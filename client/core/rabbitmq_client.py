@@ -14,9 +14,12 @@ from rabbitmq.rabbitmq_service import RabbitMQBase
 
 USER = "client"
 PASSWORD = "12345"
-EXCHANGE = "agent_exchange"
+AGENT_EXCHANGE = "agent_exchange"
+AGENT_ROUTING_KEY = "agent"
+EXCHANGE = "router_exchange"
+ROUTER_QUEUE = "router_queue"
 CLIENT_QUEUE = "client_queue"
-ROUTING_KEY = "agent"
+ROUTING_KEY = "router"
 SUPERVISOR_ROUTING_KEY = "supervisor"
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
@@ -44,6 +47,7 @@ class RabbitMQClient(RabbitMQBase):
         self.allow_commands_for_request = False
         self.ready_event = threading.Event()
         self.event_handler = event_handler
+        self.login = None
 
     def _emit(self, event_name: str, *args) -> None:
         handler = getattr(self.event_handler, event_name, None)
@@ -54,15 +58,27 @@ class RabbitMQClient(RabbitMQBase):
         self,
         login: str,
         password: str,
-    ) -> None:
-        self.publish_message(
+    ) -> bool:
+        response = self.request_response(
             {
                 "type": "login",
                 "login": login,
                 "password": password,
             },
-            routing_key=SUPERVISOR_ROUTING_KEY,
+            routing_key="router",
+            timeout=300,
         )
+        if response.get("type") == "login_response":
+            self.login = login
+            self._reconnect_to_personal(response)
+            self.publish_message({"type": "login"}, routing_key=SUPERVISOR_ROUTING_KEY)
+            return True
+
+        self._emit(
+            "on_login_error",
+            response.get("error") or response.get("message") or "Invalid login or password",
+        )
+        return False
 
     def send_task(self, task: str, chat_id: int) -> None:
         message = {
@@ -222,6 +238,64 @@ class RabbitMQClient(RabbitMQBase):
         self.allow_commands_for_request = False
         self.publish_message(message)
         self._emit("on_waiting_result")
+
+    def _reconnect_to_personal(self, credentials: dict):
+        self.connection.close()
+
+        personal_url = (
+            f"amqp://{credentials['rabbitmq_user']}:{credentials['rabbitmq_password']}"
+            f"@{credentials['rabbitmq_host']}:{credentials['rabbitmq_port']}/"
+        )
+
+        self.connection = pika.BlockingConnection(pika.URLParameters(personal_url))
+        self.channel = self.connection.channel()
+
+        self.exchange = AGENT_EXCHANGE
+        self.queue = CLIENT_QUEUE
+        self.routing_key = AGENT_ROUTING_KEY
+        self._rpc_user = credentials["rabbitmq_user"]
+        self._rpc_password = credentials["rabbitmq_password"]
+        self._rpc_host = credentials["rabbitmq_host"]
+        self._rpc_port = int(credentials["rabbitmq_port"])
+
+        self.channel.basic_qos(prefetch_count=1)
+        self.channel.basic_consume(queue=self.queue, on_message_callback=self.receive_message)
+        logger.info(
+            "Connected to personal RabbitMQ at %s:%s",
+            credentials["rabbitmq_host"],
+            credentials["rabbitmq_port"],
+        )
+
+    def send_logout(self):
+        if not self.login:
+            return
+        temp_connection = None
+        try:
+            router_url = f"amqp://{USER}:{PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}/"
+            temp_connection = pika.BlockingConnection(pika.URLParameters(router_url))
+            temp_channel = temp_connection.channel()
+
+            temp_channel.basic_publish(
+                exchange=EXCHANGE,
+                routing_key=ROUTING_KEY,
+                body=json.dumps(
+                    {
+                        "type": "logout",
+                        "login": self.login,
+                    },
+                    ensure_ascii=False,
+                ),
+                properties=pika.BasicProperties(
+                    content_type="application/json",
+                    delivery_mode=2,
+                ),
+            )
+            logger.info("Logout message sent to router")
+        except Exception as e:
+            logger.error(f"Failed to send logout message: {e}")
+        finally:
+            if temp_connection and not temp_connection.is_closed:
+                temp_connection.close()
 
     def _can_run_command(self, command: dict) -> bool:
         access = self.agent_session.get("access") or ACCESS_ASK

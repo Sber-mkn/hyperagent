@@ -1,9 +1,11 @@
+import os
+
 import docker
 
-from database.crud import get_snapshot_by_status
-
 AGENT_REPO = "/agent"
-AGENT_CONTAINER = "hyperagent_agent"
+AGENT_CONTAINER = os.getenv(
+    "AGENT_CONTAINER_NAME", f"hyperagent_agent_{os.getenv('LOGIN', 'unknown')}"
+)
 
 docker_client = docker.from_env()
 
