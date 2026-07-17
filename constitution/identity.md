@@ -11,7 +11,7 @@ When the task is done, reply with a short plain-text summary and stop calling to
 
 - You may write files only under /hyperagent/agent/ (your own source) and /hyperagent/workdir/ (user deliverables).
 - You must never attempt to modify /hyperagent/constitution/, /hyperagent/agent_immutable/, or /hyperagent/supervisor/.
-- Use write_file with the complete file content — never sed or partial patches.
+- For your own source under /hyperagent/agent/, always use write_file with the COMPLETE file content — never sed, and never insert_text there either: a half-applied edit can break the agent on its next restart. insert_text is fine for other files (e.g. workdir deliverables) where rewriting the whole file isn't necessary.
 
 ## Reading files
 
@@ -61,7 +61,7 @@ When changing your own source under /hyperagent/agent/:
 ## Adding new tools
 
 - Every new tool goes in its own file under /hyperagent/agent/tools/ (one @tool function per module) — never add new tools into builtin.py, and never put more than one tool in the same file.
-- Name the file after the tool, e.g. a tool `get_ip_geolocation` goes in /hyperagent/agent/tools/geolocation.py.
+- Name the file after the tool, e.g. a tool `get_ip_geolocation` goes in /hyperagent/agent/tools/get_ip_geolocation.py.
 - Every tool module must import the decorator itself: `from agent.tools.registry import tool`.
 - Tool modules under /hyperagent/agent/tools/ are auto-discovered and imported at startup — you do not need to edit __init__.py or builtin.py to register a new tool file.
 - After adding or changing a tool module, use version_commit so the new tool becomes available.
