@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from agent.config import AGENT_WORKDIR, CONSTITUTION_DIR
+from agent.config import CONSTITUTION_DIR
 from agent.llminterface.client.llm_chat import LLMChat, LLMMessage
 from agent.memory.store import MemoryStore, Turn
 from agent.tools.registry import truncate_middle
@@ -99,7 +99,14 @@ class ContextManager:
             "For time-sensitive questions about today, schedules, news, prices, "
             "or live events, verify the answer using available web tools instead "
             "of relying on training knowledge. "
-            f"Save user deliverables under {AGENT_WORKDIR.as_posix()}/. "
+            "A file the user needs to actually open must be created with "
+            "target='client' (run_bash/run_powershell/run_python) so it lands "
+            "on the user's own machine -- write_file and a target='server' "
+            "call only reach this container's own filesystem, which the user "
+            "cannot see or open. There is no tool to transfer a file from "
+            "server to client after the fact; if something was already built "
+            "on the server, redo the construction with target='client' "
+            "instead of looking for a way to send it. "
             "Use tools to complete and verify the task. "
             "When a task may match a learned reusable procedure, call skills_list "
             "and then load the relevant instructions with skill_view before acting. "
