@@ -1,4 +1,5 @@
 import contextlib
+import re
 import threading
 from datetime import datetime
 from typing import Any, override
@@ -43,6 +44,27 @@ from client.core.model_catalog import (
     fetch_openrouter_models,
 )
 from client.ui.qt_blocks import CommandGroupBlock, PaperPlaneButton, StreamTextBlock
+
+_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
+
+
+def _ensure_blank_line_before_tables(text: str) -> str:
+    """Qt's Markdown renderer (unlike GFM) requires a blank line before a table
+    can interrupt a paragraph -- a model that writes "Some text:\\n| a | b |"
+    with a single newline (very common) silently renders as plain text instead
+    of a table. Insert the missing blank line so it parses as one."""
+    lines = text.split("\n")
+    result: list[str] = []
+    for line in lines:
+        if (
+            _TABLE_ROW.match(line)
+            and result
+            and result[-1].strip()
+            and not _TABLE_ROW.match(result[-1])
+        ):
+            result.append("")
+        result.append(line)
+    return "\n".join(result)
 
 
 class PromptTextEdit(QPlainTextEdit):
@@ -815,7 +837,9 @@ class ChatPage(QWidget):
                 self._current_content_text = ""
                 self._add_output_widget(self._current_content_label)
             self._current_content_text += value
-            self._current_content_label.setText(self._current_content_text)
+            self._current_content_label.setText(
+                _ensure_blank_line_before_tables(self._current_content_text)
+            )
             self._stream_kind = "content"
             self._sync_output_height_soon()
             self._scroll_to_widget(self._current_content_label)
@@ -974,6 +998,8 @@ class ChatPage(QWidget):
         self.append_agent_message(message_type, value)
 
     def _create_output_label(self, text: str, object_name: str, markdown: bool = False) -> QLabel:
+        if markdown:
+            text = _ensure_blank_line_before_tables(text)
         label = QLabel(text)
         label.setObjectName(object_name)
         label.setTextFormat(Qt.TextFormat.MarkdownText if markdown else Qt.TextFormat.PlainText)
