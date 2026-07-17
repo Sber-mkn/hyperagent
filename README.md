@@ -38,7 +38,7 @@ Send a task in the client, e.g.:
 Create /hyperagent/workdir/hello.py that prints hello, then run it with run_python
 ```
 
-Wait for `--- Result ---` (15–30s). Files appear in `./workdir/` on the host.
+Files appear in `./workdir/` on the host.
 
 ## Layout
 
