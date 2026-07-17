@@ -3,11 +3,10 @@ import logging
 import os
 import threading
 
-import pika
-from pika import exceptions
 import bcrypt
+import pika
 
-from router.database.crud import get_user, add_user
+from router.database.crud import add_user, get_user
 from router.docker_manager import DockerManager
 
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "router_rabbitmq")
@@ -44,10 +43,10 @@ class RabbitMQRouter:
     def receive_message(self, ch, method, properties, body):
         try:
             message = json.loads(body.decode("utf-8"))
-            type = message.get("type")
+            message_type = message.get("type")
             login = message.get("login")
             password = message.get("password")
-            if type == "login" and login and password:
+            if message_type == "login" and login and password:
                 self._cancel_logout(login)
                 user = get_user(login)
                 if not user:
@@ -88,12 +87,12 @@ class RabbitMQRouter:
                     "login": login,
                 }
                 self.send_response(ch, properties, credentials)
-            elif type == "logout":
+            elif message_type == "logout":
                 login = message.get("login")
                 self._schedule_logout(login)
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
-        except Exception as e:
+        except Exception:
             logger.exception("Error processing message")
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 

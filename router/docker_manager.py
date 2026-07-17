@@ -11,7 +11,7 @@ COMPOSE_FILE = "docker-compose.yml"
 
 class DockerManager:
     def __init__(self):
-        logger.info(f"DockerManager initialized")
+        logger.info("DockerManager initialized")
 
     def start_client(self, login: str):
         port_hash = abs(hash(login)) % 10000

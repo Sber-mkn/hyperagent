@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -7,24 +7,24 @@ from pydantic import BaseModel, ConfigDict
 class LLMMessageSchema(BaseModel):
     id: int
     done: bool = True
-    done_reason: Optional[str] = None
+    done_reason: str | None = None
     role: str
     thinking: str = ""
     content: str = ""
 
-    tool_calls: Optional[List[Dict[str, Any]]] = None
-    tool_call_id: Optional[str] = None
-    name: Optional[str] = None
+    tool_calls: list[dict[str, Any]] | None = None
+    tool_call_id: str | None = None
+    name: str | None = None
 
     provider: str = ""
     model: str = ""
 
-    tokens_prompt: Optional[int] = None
-    tokens_response: Optional[int] = None
-    duration_load: Optional[int] = None
-    duration_prompt: Optional[int] = None
-    duration_response: Optional[int] = None
+    tokens_prompt: int | None = None
+    tokens_response: int | None = None
+    duration_load: int | None = None
+    duration_prompt: int | None = None
+    duration_response: int | None = None
 
-    dt: Optional[datetime] = None
+    dt: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
