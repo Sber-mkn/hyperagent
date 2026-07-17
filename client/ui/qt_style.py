@@ -101,6 +101,21 @@ def stylesheet(theme: str = "dark") -> str:
         background: #e8ebf0;
     }
 
+    #modelMenuList {
+        background: #ffffff;
+        color: #252b34;
+        border: 0;
+        outline: 0;
+    }
+
+    #modelMenuList::item {
+        padding: 7px 10px;
+    }
+
+    #modelMenuList::item:selected {
+        background: #e8eefc;
+    }
+
     #flatButton:disabled {
         color: #a0a7b1;
         background: transparent;
@@ -402,6 +417,21 @@ def stylesheet(theme: str = "dark") -> str:
 
     #flatButton:hover, #ghostButton:hover, #menuButton:hover, #selectorButton:hover {
         background: #27292e;
+    }
+
+    #modelMenuList {
+        background: #222327;
+        color: #e8eaf0;
+        border: 0;
+        outline: 0;
+    }
+
+    #modelMenuList::item {
+        padding: 7px 10px;
+    }
+
+    #modelMenuList::item:selected {
+        background: #30343a;
     }
 
     #flatButton:disabled {

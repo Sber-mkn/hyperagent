@@ -119,7 +119,8 @@ class HyperagentClientWindow(QMainWindow):
         self.chat_page.create_chat_requested.connect(self._create_chat)
         self.chat_page.rename_chat_requested.connect(self._rename_chat)
         self.chat_page.settings_requested.connect(self._show_settings)
-        self.chat_page.model_selected.connect(self._select_model)
+        self.chat_page.provider_selected.connect(self._select_provider)
+        self.chat_page.model_choice_selected.connect(self._select_model_choice)
         self.chat_page.access_selected.connect(self._select_access)
         self.chat_page.logout_requested.connect(self._logout)
         self.chat_page.send_requested.connect(self._send_task)
@@ -239,11 +240,15 @@ class HyperagentClientWindow(QMainWindow):
         self._apply_settings_to_ui()
         self._return_from_settings()
 
-    def _select_model(self, model: str) -> None:
-        if not self.controller.model_configured(model):
+    def _select_provider(self, model: str) -> None:
+        if not self.controller.provider_configured(model):
             self._show_settings(model)
             return
         self.controller.set_model(model)
+        self._apply_settings_to_ui()
+
+    def _select_model_choice(self, model: str, model_name: str) -> None:
+        self.controller.set_model_choice(model, model_name)
         self._apply_settings_to_ui()
 
     def _select_access(self, access: str) -> None:
@@ -252,8 +257,9 @@ class HyperagentClientWindow(QMainWindow):
 
     def _apply_settings_to_ui(self) -> None:
         settings = self.controller.settings()
-        self.chat_page.set_model(str(settings.get("model") or MODEL_LOCAL))
+        self.chat_page.set_model(str(settings.get("model") or MODEL_LOCAL), settings)
         self.chat_page.set_access(str(settings.get("access") or ACCESS_ASK))
+        self.settings_page.set_settings(settings)
 
     def _show_chat_list(self) -> None:
         if self.logged_in and not self.controller.has_busy_chats():
@@ -280,6 +286,11 @@ class HyperagentClientWindow(QMainWindow):
         self._open_chat(int(chat["id"]), str(chat["title"]))
 
     def _send_task(self, text: str, chat_id: int) -> None:
+        settings = self.controller.settings()
+        model = str(settings.get("model") or MODEL_LOCAL)
+        if not self.controller.model_configured(model):
+            self.chat_page.prompt_model_choice(model)
+            return
         if self.client is None:
             self.chat_page.append_status("Сервис временно недоступен.")
             self.chat_page.set_busy(False)

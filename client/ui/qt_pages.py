@@ -1,4 +1,5 @@
 import contextlib
+import threading
 from datetime import datetime
 from typing import Any, override
 
@@ -6,13 +7,16 @@ from PyQt6.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QMouseEvent
 from PyQt6.QtWidgets import (
     QButtonGroup,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMenu,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
@@ -21,15 +25,23 @@ from PyQt6.QtWidgets import (
     QToolButton,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 
 from client.core.client_state import (
     ACCESS_ASK,
     ACCESS_FULL,
     ACCESS_READ_ONLY,
+    HYPER_OLLAMA_URL,
     MODEL_LOCAL,
     MODEL_OLLAMA,
+    MODEL_OPENAI,
     MODEL_OPENROUTER,
+)
+from client.core.model_catalog import (
+    fetch_ollama_models,
+    fetch_openai_models,
+    fetch_openrouter_models,
 )
 from client.ui.qt_blocks import CommandGroupBlock, PaperPlaneButton, StreamTextBlock
 
@@ -265,18 +277,23 @@ class SettingsPage(QWidget):
         super().__init__()
         self.model_group = QButtonGroup(self)
         self.theme_group = QButtonGroup(self)
-        self.local_radio = QRadioButton("Local models (auto)")
+        self.local_radio = QRadioButton("Hyper")
         self.openrouter_radio = QRadioButton("OpenRouter")
-        self.ollama_radio = QRadioButton("User local model (Ollama)")
+        self.ollama_radio = QRadioButton("Ollama")
+        self.openai_radio = QRadioButton("OpenAI")
         self.openrouter_api_input = QLineEdit()
-        self.openrouter_model_input = QLineEdit()
         self.ollama_url_input = QLineEdit()
+        self.openai_api_input = QLineEdit()
+        self.work_dir_input = QLineEdit()
+        self.work_dir_browse_button = QPushButton("Browse…")
         self.dark_radio = QRadioButton("Dark")
         self.light_radio = QRadioButton("Light")
         self.back_button = QPushButton("Back")
         self.save_button = QPushButton("Save")
         self.openrouter_frame = QFrame()
         self.ollama_frame = QFrame()
+        self.openai_frame = QFrame()
+        self.work_dir_frame = QFrame()
         self._build()
 
     def set_settings(self, settings: dict[str, Any], focus_model: str | None = None) -> None:
@@ -284,9 +301,11 @@ class SettingsPage(QWidget):
         self.local_radio.setChecked(model == MODEL_LOCAL)
         self.openrouter_radio.setChecked(model == MODEL_OPENROUTER)
         self.ollama_radio.setChecked(model == MODEL_OLLAMA)
+        self.openai_radio.setChecked(model == MODEL_OPENAI)
         self.openrouter_api_input.setText(str(settings.get("openrouter_api_key") or ""))
-        self.openrouter_model_input.setText(str(settings.get("openrouter_model") or ""))
         self.ollama_url_input.setText(str(settings.get("ollama_url") or ""))
+        self.openai_api_input.setText(str(settings.get("openai_api_key") or ""))
+        self.work_dir_input.setText(str(settings.get("work_dir") or ""))
         self.dark_radio.setChecked(settings.get("theme") != "light")
         self.light_radio.setChecked(settings.get("theme") == "light")
         self._sync_model_fields()
@@ -320,15 +339,27 @@ class SettingsPage(QWidget):
         self.model_group.addButton(self.local_radio)
         self.model_group.addButton(self.openrouter_radio)
         self.model_group.addButton(self.ollama_radio)
-        for radio in (self.local_radio, self.openrouter_radio, self.ollama_radio):
+        self.model_group.addButton(self.openai_radio)
+        for radio in (
+            self.local_radio,
+            self.openrouter_radio,
+            self.ollama_radio,
+            self.openai_radio,
+        ):
             radio.setObjectName("settingsRadio")
             radio.toggled.connect(self._sync_model_fields)
             layout.addWidget(radio)
 
         self._build_openrouter_frame()
         self._build_ollama_frame()
+        self._build_openai_frame()
         layout.addWidget(self.openrouter_frame)
         layout.addWidget(self.ollama_frame)
+        layout.addWidget(self.openai_frame)
+
+        layout.addWidget(_settings_section_title("Working directory"))
+        self._build_work_dir_frame()
+        layout.addWidget(self.work_dir_frame)
 
         layout.addWidget(_settings_section_title("Theme"))
         self.theme_group.addButton(self.dark_radio)
@@ -353,14 +384,9 @@ class SettingsPage(QWidget):
         layout.setSpacing(8)
         api_label = QLabel("OpenRouter API key")
         api_label.setObjectName("inputLabel")
-        model_label = QLabel("Model name")
-        model_label.setObjectName("inputLabel")
         self.openrouter_api_input.setPlaceholderText("sk-or-...")
-        self.openrouter_model_input.setPlaceholderText("openai/gpt-5")
         layout.addWidget(api_label)
         layout.addWidget(self.openrouter_api_input)
-        layout.addWidget(model_label)
-        layout.addWidget(self.openrouter_model_input)
 
     def _build_ollama_frame(self) -> None:
         self.ollama_frame.setObjectName("settingsPanel")
@@ -373,9 +399,46 @@ class SettingsPage(QWidget):
         layout.addWidget(url_label)
         layout.addWidget(self.ollama_url_input)
 
+    def _build_openai_frame(self) -> None:
+        self.openai_frame.setObjectName("settingsPanel")
+        layout = QVBoxLayout(self.openai_frame)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(8)
+        api_label = QLabel("OpenAI API key")
+        api_label.setObjectName("inputLabel")
+        self.openai_api_input.setPlaceholderText("sk-...")
+        layout.addWidget(api_label)
+        layout.addWidget(self.openai_api_input)
+
+    def _build_work_dir_frame(self) -> None:
+        self.work_dir_frame.setObjectName("settingsPanel")
+        layout = QVBoxLayout(self.work_dir_frame)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(8)
+        dir_label = QLabel("Agent's working directory on this machine")
+        dir_label.setObjectName("inputLabel")
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.work_dir_input.setPlaceholderText("workdir (default)")
+        row.addWidget(self.work_dir_input, 1)
+        self.work_dir_browse_button.setObjectName("ghostButton")
+        self.work_dir_browse_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.work_dir_browse_button.clicked.connect(self._browse_work_dir)
+        row.addWidget(self.work_dir_browse_button)
+        layout.addWidget(dir_label)
+        layout.addLayout(row)
+
+    def _browse_work_dir(self) -> None:
+        directory = QFileDialog.getExistingDirectory(
+            self, "Choose working directory", self.work_dir_input.text().strip()
+        )
+        if directory:
+            self.work_dir_input.setText(directory)
+
     def _sync_model_fields(self, _checked: bool = False) -> None:
         self.openrouter_frame.setVisible(self.openrouter_radio.isChecked())
         self.ollama_frame.setVisible(self.ollama_radio.isChecked())
+        self.openai_frame.setVisible(self.openai_radio.isChecked())
 
     def settings(self) -> dict[str, Any]:
         model = MODEL_LOCAL
@@ -383,24 +446,44 @@ class SettingsPage(QWidget):
             model = MODEL_OPENROUTER
         elif self.ollama_radio.isChecked():
             model = MODEL_OLLAMA
+        elif self.openai_radio.isChecked():
+            model = MODEL_OPENAI
         return {
             "model": model,
             "openrouter_api_key": self.openrouter_api_input.text().strip(),
-            "openrouter_model": self.openrouter_model_input.text().strip(),
             "ollama_url": self.ollama_url_input.text().strip(),
+            "openai_api_key": self.openai_api_input.text().strip(),
+            "work_dir": self.work_dir_input.text().strip(),
             "theme": "light" if self.light_radio.isChecked() else "dark",
         }
 
 
+_PROVIDER_LABELS = {
+    MODEL_LOCAL: "Hyper",
+    MODEL_OPENROUTER: "OpenRouter",
+    MODEL_OLLAMA: "Ollama",
+    MODEL_OPENAI: "OpenAI",
+}
+
+
+def _short_label(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: max(1, limit - 3)] + "..."
+
+
 class ChatPage(QWidget):
     send_requested = pyqtSignal(str, int)
-    model_selected = pyqtSignal(str)
+    provider_selected = pyqtSignal(str)
+    model_choice_selected = pyqtSignal(str, str)
     access_selected = pyqtSignal(str)
     back_requested = pyqtSignal()
     create_chat_requested = pyqtSignal()
     rename_chat_requested = pyqtSignal(int, str)
     settings_requested = pyqtSignal()
     logout_requested = pyqtSignal()
+    _models_fetched = pyqtSignal(str, list)
+    _models_fetch_failed = pyqtSignal(str, str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -412,6 +495,27 @@ class ChatPage(QWidget):
         self._current_content_text = ""
         self._current_response_model: str | None = None
         self._command_groups: dict[str, CommandGroupBlock] = {}
+        self._current_provider = MODEL_LOCAL
+        self._provider_context: dict[str, str] = {
+            "ollama_url": "",
+            "openrouter_api_key": "",
+            "openai_api_key": "",
+        }
+        self._model_by_provider: dict[str, str] = {
+            MODEL_LOCAL: "",
+            MODEL_OPENROUTER: "",
+            MODEL_OLLAMA: "",
+            MODEL_OPENAI: "",
+        }
+        self._available_models: dict[str, list[str]] = {
+            MODEL_LOCAL: [],
+            MODEL_OPENROUTER: [],
+            MODEL_OLLAMA: [],
+            MODEL_OPENAI: [],
+        }
+        self._fetched_providers: set[str] = set()
+        self._models_fetched.connect(self._on_models_fetched)
+        self._models_fetch_failed.connect(self._on_models_fetch_failed)
         self._waiting_visible = False
 
         self.title_label = QLabel("Кодобольный AI")
@@ -420,6 +524,7 @@ class ChatPage(QWidget):
         self.output_layout = QVBoxLayout(self.output_widget)
         self.input = PromptTextEdit()
         self.access_button = QToolButton()
+        self.provider_button = QToolButton()
         self.model_button = QToolButton()
         self.send_button = PaperPlaneButton()
         self.back_button = QPushButton("Chats")
@@ -459,13 +564,109 @@ class ChatPage(QWidget):
             Qt.CursorShape.PointingHandCursor if enabled else Qt.CursorShape.ArrowCursor
         )
 
-    def set_model(self, model: str) -> None:
-        labels = {
-            MODEL_LOCAL: "Auto",
-            MODEL_OPENROUTER: "OpenRouter",
-            MODEL_OLLAMA: "Ollama",
-        }
-        self.model_button.setText(f"{labels.get(model, 'Auto')}")
+    def set_model(self, model: str, settings: dict[str, Any] | None = None) -> None:
+        context_changed = False
+        if settings is not None:
+            new_context = {
+                "ollama_url": str(settings.get("ollama_url") or ""),
+                "openrouter_api_key": str(settings.get("openrouter_api_key") or ""),
+                "openai_api_key": str(settings.get("openai_api_key") or ""),
+            }
+            context_changed = new_context != self._provider_context
+            self._provider_context = new_context
+            self._model_by_provider = {
+                MODEL_LOCAL: str(settings.get("local_model") or ""),
+                MODEL_OPENROUTER: str(settings.get("openrouter_model") or ""),
+                MODEL_OLLAMA: str(settings.get("ollama_model") or ""),
+                MODEL_OPENAI: str(settings.get("openai_model") or ""),
+            }
+        provider_changed = model != self._current_provider
+        self._current_provider = model
+        self.provider_button.setText(_PROVIDER_LABELS.get(model, "Hyper"))
+        self._update_model_button()
+        # Refresh the model list on an actual provider switch, the first time
+        # this provider is ever seen, or when its connection details (Ollama
+        # URL / OpenRouter key) changed since the last fetch — a saved
+        # Settings edit invalidates whatever was cached before it.
+        if provider_changed or context_changed or model not in self._fetched_providers:
+            self._refresh_available_models(model)
+
+    def _update_model_button(self) -> None:
+        provider = self._current_provider
+        model_name = self._model_by_provider.get(provider, "")
+        if model_name:
+            self.model_button.setText(_short_label(model_name, 24))
+            self.model_button.setToolTip(model_name)
+        elif provider in self._fetched_providers:
+            self.model_button.setText("No models")
+            self.model_button.setToolTip("")
+        else:
+            self.model_button.setText("Loading...")
+            self.model_button.setToolTip("")
+        _bind_menu_above(self.model_button, self._build_model_menu())
+
+    def _build_model_menu(self) -> QMenu:
+        provider = self._current_provider
+        menu = QMenu(self.model_button)
+        models = self._available_models.get(provider, [])
+        if models:
+            model_list = QListWidget(menu)
+            model_list.setObjectName("modelMenuList")
+            model_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            model_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            model_list.setUniformItemSizes(True)
+            current_model = self._model_by_provider.get(provider, "")
+            for model in models:
+                item = QListWidgetItem(model)
+                item.setToolTip(model)
+                model_list.addItem(item)
+                if model == current_model:
+                    item.setSelected(True)
+                    model_list.setCurrentItem(item)
+            visible_rows = min(14, max(1, len(models)))
+            row_height = max(24, model_list.sizeHintForRow(0))
+            model_list.setFixedSize(460, row_height * visible_rows + 8)
+            if current_model:
+                current_item = model_list.currentItem()
+                if current_item is not None:
+                    model_list.scrollToItem(current_item)
+            model_list.itemClicked.connect(
+                lambda item, p=provider, m=menu: self._select_model_from_menu(p, item, m)
+            )
+            model_action = QWidgetAction(menu)
+            model_action.setDefaultWidget(model_list)
+            menu.addAction(model_action)
+            menu.addSeparator()
+        else:
+            empty_action = QAction("No models found", menu)
+            empty_action.setEnabled(False)
+            menu.addAction(empty_action)
+            menu.addSeparator()
+
+        refresh_action = QAction("Refresh models", menu)
+        refresh_action.triggered.connect(
+            lambda checked=False, p=provider: self._refresh_available_models(p)
+        )
+        menu.addAction(refresh_action)
+        manual_action = QAction("Enter model name...", menu)
+        manual_action.triggered.connect(
+            lambda checked=False, p=provider: self._open_model_manual(p)
+        )
+        menu.addAction(manual_action)
+        return menu
+
+    def _select_model_from_menu(
+        self,
+        provider: str,
+        item: QListWidgetItem,
+        menu: QMenu,
+    ) -> None:
+        self.model_choice_selected.emit(provider, item.text())
+        menu.close()
+
+    def prompt_model_choice(self, provider: str) -> None:
+        QMessageBox.information(self, "Choose a model", "Pick a model before sending a task.")
+        self._refresh_available_models(provider)
 
     def set_access(self, access: str) -> None:
         labels = {
@@ -474,6 +675,83 @@ class ChatPage(QWidget):
             ACCESS_FULL: "Full",
         }
         self.access_button.setText(f"{labels.get(access, 'Ask')}")
+
+    def _open_model_manual(self, provider: str) -> None:
+        current = self._model_by_provider.get(provider, "")
+        name, accepted = QInputDialog.getText(self, "Model name", "Model:", text=current)
+        name = name.strip()
+        if accepted and name:
+            self.model_choice_selected.emit(provider, name)
+
+    def _refresh_available_models(self, provider: str) -> None:
+        if provider == MODEL_OLLAMA:
+            # An unconfigured URL falls back to the standard local Ollama
+            # default (the same address Hyper's fixed backend happens to
+            # use) rather than showing "No models" for a server that's
+            # actually reachable at the well-known default port.
+            url = self._provider_context.get("ollama_url") or HYPER_OLLAMA_URL
+
+            def fetch_fn() -> list[str]:
+                return fetch_ollama_models(url)
+        elif provider == MODEL_OPENROUTER:
+            api_key = self._provider_context.get("openrouter_api_key") or ""
+
+            def fetch_fn() -> list[str]:
+                return fetch_openrouter_models(api_key)
+        elif provider == MODEL_OPENAI:
+            api_key = self._provider_context.get("openai_api_key") or ""
+            if not api_key:
+                # Unlike OpenRouter, OpenAI requires a key just to list
+                # models -- an unconfigured key can only ever show "No
+                # models", not a real (or borrowed) list.
+                self._models_fetched.emit(provider, [])
+                return
+
+            def fetch_fn() -> list[str]:
+                return fetch_openai_models(api_key)
+        else:
+
+            def fetch_fn() -> list[str]:
+                return fetch_ollama_models(HYPER_OLLAMA_URL)
+
+        def worker() -> None:
+            try:
+                models = fetch_fn()
+            except Exception as exc:
+                self._models_fetch_failed.emit(provider, str(exc))
+            else:
+                self._models_fetched.emit(provider, models)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_models_fetched(self, provider: str, models: list[str]) -> None:
+        self._fetched_providers.add(provider)
+        self._available_models[provider] = models
+        previous_choice = self._model_by_provider.get(provider) or ""
+        # A saved choice that this provider's server no longer offers (or
+        # was auto-picked earlier against the wrong server, e.g. Local
+        # Ollama borrowing Hyper's list before that was fixed) must not keep
+        # displaying as if it were still selected.
+        resolved_choice = previous_choice if previous_choice in models else ""
+        if not resolved_choice and models:
+            resolved_choice = models[0]
+        self._model_by_provider[provider] = resolved_choice
+        # Only announce the change if this fetch is still for the provider
+        # actually active right now. A background fetch started before a
+        # provider switch can resolve after the user has already moved on;
+        # letting it emit unconditionally would push settings["model"] back
+        # to the stale provider it was fetched for.
+        if resolved_choice != previous_choice and provider == self._current_provider:
+            self.model_choice_selected.emit(provider, resolved_choice)
+        if provider == self._current_provider:
+            self._update_model_button()
+
+    def _on_models_fetch_failed(self, provider: str, error: str) -> None:
+        self._fetched_providers.add(provider)
+        self._available_models[provider] = []
+        if provider == self._current_provider:
+            self._update_model_button()
+            self.model_button.setToolTip(error)
 
     def set_busy(self, busy: bool) -> None:
         self.input.setDisabled(busy)
@@ -492,7 +770,7 @@ class ChatPage(QWidget):
         self._close_active_command_group()
         self._reset_stream_state()
         answer = message.get("answer") or message.get("result") or message.get("summary") or message
-        self._append_text_block(f"Result: {answer}", "resultMessage")
+        self._append_text_block(f"Result: {answer}", "resultMessage", markdown=True)
 
     def append_status(self, message: str) -> None:
         self._close_active_think()
@@ -575,7 +853,9 @@ class ChatPage(QWidget):
 
         if kind == "content":
             if self._stream_kind != "content" or self._current_content_label is None:
-                self._current_content_label = self._create_output_label("", "assistantText")
+                self._current_content_label = self._create_output_label(
+                    "", "assistantText", markdown=True
+                )
                 self._current_content_text = ""
                 self._add_output_widget(self._current_content_label)
             self._current_content_text += value
@@ -623,30 +903,35 @@ class ChatPage(QWidget):
 
         self.output_scroll.setObjectName("agentScroll")
         self.output_scroll.setWidgetResizable(True)
+        self.output_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.output_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.output_scroll.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.output_scroll.setWidget(self.output_widget)
         self.output_widget.setObjectName("agentOutput")
         self.output_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.output_widget.setMinimumWidth(0)
         self.output_layout.setContentsMargins(0, 0, 0, 0)
         self.output_layout.setSpacing(12)
         self.output_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         input_frame = QFrame()
         input_frame.setObjectName("inputFrame")
-        input_layout = QHBoxLayout(input_frame)
+        input_layout = QVBoxLayout(input_frame)
         input_layout.setContentsMargins(12, 10, 10, 10)
         input_layout.setSpacing(8)
+        controls_layout = QHBoxLayout()
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(8)
 
         self.input.setObjectName("taskInput")
         self.input.setPlaceholderText("Ask the agent")
         self.input.setFixedHeight(92)
         self.input.setTabChangesFocus(True)
+        self.input.setMinimumWidth(120)
         self.input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.input.submitted.connect(self._send)
 
         self.access_button.setObjectName("selectorButton")
-        self.access_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.access_button.setCursor(Qt.CursorShape.PointingHandCursor)
         access_menu = QMenu(self.access_button)
         for label, value in (
@@ -659,32 +944,39 @@ class ChatPage(QWidget):
                 lambda checked=False, item=value: self.access_selected.emit(item)
             )
             access_menu.addAction(action)
-        self.access_button.setMenu(access_menu)
+        _bind_menu_above(self.access_button, access_menu)
+
+        self.provider_button.setObjectName("selectorButton")
+        self.provider_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        provider_menu = QMenu(self.provider_button)
+        for label, value in (
+            ("Hyper", MODEL_LOCAL),
+            ("OpenRouter", MODEL_OPENROUTER),
+            ("Ollama", MODEL_OLLAMA),
+            ("OpenAI", MODEL_OPENAI),
+        ):
+            action = QAction(label, self.provider_button)
+            action.triggered.connect(
+                lambda checked=False, item=value: self.provider_selected.emit(item)
+            )
+            provider_menu.addAction(action)
+        _bind_menu_above(self.provider_button, provider_menu)
 
         self.model_button.setObjectName("selectorButton")
-        self.model_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.model_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        model_menu = QMenu(self.model_button)
-        for label, value in (
-            ("Local models (auto)", MODEL_LOCAL),
-            ("OpenRouter", MODEL_OPENROUTER),
-            ("User local model (Ollama)", MODEL_OLLAMA),
-        ):
-            action = QAction(label, self.model_button)
-            action.triggered.connect(
-                lambda checked=False, item=value: self.model_selected.emit(item)
-            )
-            model_menu.addAction(action)
-        self.model_button.setMenu(model_menu)
+        _bind_menu_above(self.model_button, self._build_model_menu())
 
         self.send_button.setFixedSize(38, 38)
         self.send_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.send_button.clicked.connect(self._send)
 
-        input_layout.addWidget(self.input, 1)
-        input_layout.addWidget(self.access_button, 0, Qt.AlignmentFlag.AlignBottom)
-        input_layout.addWidget(self.model_button, 0, Qt.AlignmentFlag.AlignBottom)
-        input_layout.addWidget(self.send_button, 0, Qt.AlignmentFlag.AlignBottom)
+        input_layout.addWidget(self.input)
+        controls_layout.addStretch(1)
+        controls_layout.addWidget(self.access_button)
+        controls_layout.addWidget(self.provider_button)
+        controls_layout.addWidget(self.model_button)
+        controls_layout.addWidget(self.send_button)
+        input_layout.addLayout(controls_layout)
 
         body_layout.addWidget(self.output_scroll, 1)
         body_layout.addWidget(input_frame)
@@ -701,8 +993,8 @@ class ChatPage(QWidget):
         self.set_busy(True)
         self.send_requested.emit(text, self.chat_id)
 
-    def _append_text_block(self, text: str, object_name: str) -> QLabel:
-        label = self._create_output_label(text, object_name)
+    def _append_text_block(self, text: str, object_name: str, markdown: bool = False) -> QLabel:
+        label = self._create_output_label(text, object_name, markdown=markdown)
         self._add_output_widget(label)
         return label
 
@@ -731,21 +1023,25 @@ class ChatPage(QWidget):
 
         self.append_agent_message(message_type, value)
 
-    def _create_output_label(self, text: str, object_name: str) -> QLabel:
+    def _create_output_label(self, text: str, object_name: str, markdown: bool = False) -> QLabel:
         label = QLabel(text)
         label.setObjectName(object_name)
-        label.setTextFormat(Qt.TextFormat.PlainText)
+        label.setTextFormat(Qt.TextFormat.MarkdownText if markdown else Qt.TextFormat.PlainText)
         label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        label.setMinimumWidth(0)
         label.setMaximumHeight(16777215)
+        if markdown:
+            label.setOpenExternalLinks(True)
         return label
 
     def _add_output_widget(self, widget: QWidget) -> None:
         waiting_was_visible = self._waiting_visible
         if waiting_was_visible:
             self._remove_waiting_label()
+        widget.setMinimumWidth(0)
         widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.output_layout.addWidget(widget)
         if waiting_was_visible:
@@ -853,8 +1149,21 @@ def _account_menu_button(
     logout_action = QAction("Logout", button)
     logout_action.triggered.connect(logout_callback)
     menu.addAction(logout_action)
+    button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
     button.setMenu(menu)
     return button
+
+
+def _bind_menu_above(button: QToolButton, menu: QMenu) -> None:
+    button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+    button.setMenu(menu)
+    menu.aboutToShow.connect(lambda: QTimer.singleShot(0, lambda: _move_menu_above(button, menu)))
+
+
+def _move_menu_above(button: QToolButton, menu: QMenu) -> None:
+    pos = button.mapToGlobal(button.rect().topLeft())
+    pos.setY(pos.y() - menu.sizeHint().height())
+    menu.move(pos)
 
 
 def _settings_section_title(text: str) -> QLabel:

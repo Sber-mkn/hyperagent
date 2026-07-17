@@ -7,7 +7,10 @@ from client.core.client_state import (
     ACCESS_READ_ONLY,
     DEFAULT_AGENT_CONFIG,
     DEFAULT_AGENT_TYPE,
+    HYPER_OLLAMA_URL,
+    MODEL_LOCAL,
     MODEL_OLLAMA,
+    MODEL_OPENAI,
     MODEL_OPENROUTER,
     NEW_CHAT_TITLE,
     ClientState,
@@ -33,6 +36,7 @@ class ChatController:
     def attach_client(self, client: RabbitMQClient) -> None:
         self.client = client
         client.agent_session = self.agent_session()
+        client.set_work_dir(self.settings().get("work_dir") or None)
 
     def detach_client(self) -> None:
         self.client = None
@@ -185,10 +189,24 @@ class ChatController:
         self.state.save_settings(settings)
         if self.client is not None:
             self.client.agent_session = self.agent_session()
+            self.client.set_work_dir(settings.get("work_dir") or None)
 
     def set_model(self, model: str) -> None:
         settings = self.settings()
         settings["model"] = model
+        self.save_settings(settings)
+
+    def set_model_choice(self, model: str, model_name: str) -> None:
+        settings = self.settings()
+        settings["model"] = model
+        if model == MODEL_OPENROUTER:
+            settings["openrouter_model"] = model_name
+        elif model == MODEL_OLLAMA:
+            settings["ollama_model"] = model_name
+        elif model == MODEL_OPENAI:
+            settings["openai_model"] = model_name
+        elif model == MODEL_LOCAL:
+            settings["local_model"] = model_name
         self.save_settings(settings)
 
     def set_access(self, access: str) -> None:
@@ -196,13 +214,30 @@ class ChatController:
         settings["access"] = access
         self.save_settings(settings)
 
+    def provider_configured(self, model: str) -> bool:
+        settings = self.settings()
+        if model == MODEL_OPENROUTER:
+            return bool(settings["openrouter_api_key"])
+        if model == MODEL_OLLAMA:
+            return bool(settings["ollama_url"])
+        if model == MODEL_OPENAI:
+            return bool(settings["openai_api_key"])
+        return True
+
     def model_configured(self, model: str) -> bool:
         settings = self.settings()
         if model == MODEL_OPENROUTER:
             return bool(settings["openrouter_api_key"] and settings["openrouter_model"])
         if model == MODEL_OLLAMA:
-            return bool(settings["ollama_url"])
+            return bool(settings["ollama_url"] and settings["ollama_model"])
+        if model == MODEL_OPENAI:
+            return bool(settings["openai_api_key"] and settings["openai_model"])
         return True
+
+    def model_fetch_url(self, model: str) -> str:
+        if model == MODEL_OLLAMA:
+            return str(self.settings().get("ollama_url") or "")
+        return HYPER_OLLAMA_URL
 
     def theme(self) -> str:
         return str(self.settings()["theme"])
@@ -211,7 +246,10 @@ class ChatController:
         settings = self.settings()
         model = settings["model"]
         agent_type = DEFAULT_AGENT_TYPE
-        agent_config = dict(DEFAULT_AGENT_CONFIG)
+        agent_config = {
+            **DEFAULT_AGENT_CONFIG,
+            "AGENT_MODEL": settings.get("local_model") or "auto",
+        }
 
         if model == MODEL_OPENROUTER:
             agent_type = "api"
@@ -223,7 +261,13 @@ class ChatController:
             agent_type = "ollama"
             agent_config = {
                 "OLLAMA_URL": settings["ollama_url"],
-                "AGENT_MODEL": "ollama",
+                "AGENT_MODEL": settings.get("ollama_model") or "auto",
+            }
+        elif model == MODEL_OPENAI:
+            agent_type = "openai"
+            agent_config = {
+                "OPENAI_API_KEY": settings["openai_api_key"],
+                "AGENT_MODEL": settings["openai_model"],
             }
 
         access = settings.get("access") or ACCESS_ASK

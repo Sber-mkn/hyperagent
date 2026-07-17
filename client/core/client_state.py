@@ -9,16 +9,23 @@ NEW_CHAT_TITLE = "New Chat"
 MODEL_LOCAL = "local"
 MODEL_OPENROUTER = "openrouter"
 MODEL_OLLAMA = "ollama"
+MODEL_OPENAI = "openai"
+HYPER_OLLAMA_URL = "http://localhost:11434"
 ACCESS_READ_ONLY = "read_only"
 ACCESS_ASK = "ask"
 ACCESS_FULL = "full_access"
 DEFAULT_SETTINGS = {
     "model": MODEL_LOCAL,
+    "local_model": "",
     "openrouter_api_key": "",
     "openrouter_model": "",
     "ollama_url": "",
+    "ollama_model": "",
+    "openai_api_key": "",
+    "openai_model": "",
     "theme": "dark",
     "access": ACCESS_ASK,
+    "work_dir": "",
 }
 
 
