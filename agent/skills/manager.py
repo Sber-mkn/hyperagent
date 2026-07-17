@@ -51,7 +51,7 @@ class SkillManager:
         model: str,
         data_dir: Path,
         options: dict[str, Any] | None = None,
-    ) -> SkillManager:
+    ) -> "SkillManager":
         manager = cls(client, model, data_dir, options)
         manager.data_dir.mkdir(parents=True, exist_ok=True)
         return manager
@@ -77,7 +77,9 @@ class SkillManager:
         try:
             skills = self._generate(turns, tool_names)
             if not skills:
-                self.last_reason = "The summarizer found no new broadly reusable procedure."
+                self.last_reason = (
+                    "The summarizer found no new broadly reusable procedure."
+                )
                 return []
 
             learned: list[LearnedSkill] = []
@@ -171,7 +173,7 @@ class SkillManager:
         for item in raw_skills:
             try:
                 validated.append(_validate_skill(item, tool_names))
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 logger.warning("Skipping invalid skill entry: %r", item)
         return validated
 
@@ -181,7 +183,10 @@ class SkillManager:
             return None
 
         tools = "\n".join(f"- {name}" for name in skill["tools"])
-        steps = "\n".join(f"{index}. {step}" for index, step in enumerate(skill["steps"], start=1))
+        steps = "\n".join(
+            f"{index}. {step}"
+            for index, step in enumerate(skill["steps"], start=1)
+        )
         extra = ""
         if skill.get("source_url"):
             extra += f"Source: {skill['source_url']}\n\n"
@@ -207,7 +212,9 @@ def _worth_evaluating(turns: list[Turn]) -> bool:
         return True  # any tool call at all — including a single failed one — is a candidate
 
     assistant_turns = [turn for turn in turns if turn.role == "assistant"]
-    reasoning_chars = sum(len(turn.content) + len(turn.thinking or "") for turn in assistant_turns)
+    reasoning_chars = sum(
+        len(turn.content) + len(turn.thinking or "") for turn in assistant_turns
+    )
     return len(assistant_turns) >= MIN_ASSISTANT_TURNS or reasoning_chars >= MIN_REASONING_CHARS
 
 

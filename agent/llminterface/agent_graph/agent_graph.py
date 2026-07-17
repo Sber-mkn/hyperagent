@@ -1,8 +1,7 @@
-from collections.abc import Callable
+from typing import Any, Callable, Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
 
-from agent.llminterface.agent_chain.executable import MISSING, Executable
+from agent.llminterface.agent_chain.executable import Executable, MISSING
 from agent.llminterface.agent_graph.agent_state import AgentState
 
 
@@ -16,56 +15,60 @@ END = _End()
 Router = Callable[[AgentState], Any]
 
 
-def _as_list(x: Any) -> list[Any]:
+def _as_list(x: Any) -> List[Any]:
     if isinstance(x, (list, tuple, set)):
         return list(x)
     return [x]
 
 
 class AgentGraph(Executable):
-    def __init__(self, max_steps: int = 1000, max_workers: int | None = None):
-        self._nodes: dict[str, Executable] = {}
-        self._edges: dict[str, list[Any]] = {}  # src -> [dst, ...] (dst может быть END)
-        self._routers: dict[str, Router] = {}  # src -> router (условное ребро)
-        self._entry: list[str] = []  # один или несколько стартовых узлов
-        self._max_steps = max_steps  # защита от бесконечного цикла (в супершагах)
-        self._max_workers = max_workers  # потолок потоков на супершаг (None -> по числу узлов)
+
+    def __init__(self, max_steps: int = 1000, max_workers: Optional[int] = None):
+        self._nodes: Dict[str, Executable] = {}
+        self._edges: Dict[str, List[Any]] = {}   # src -> [dst, ...] (dst может быть END)
+        self._routers: Dict[str, Router] = {}    # src -> router (условное ребро)
+        self._entry: List[str] = []              # один или несколько стартовых узлов
+        self._max_steps = max_steps              # защита от бесконечного цикла (в супершагах)
+        self._max_workers = max_workers          # потолок потоков на супершаг (None -> по числу узлов)
 
     # сборка
-    def add_node(self, name: str, node: Any) -> AgentGraph:
+    def add_node(self, name: str, node: Any) -> "AgentGraph":
         if name in self._nodes:
             raise ValueError(f"Узел '{name}' уже зарегистрирован")
         self._nodes[name] = Executable.to_executable(node)
         return self
 
-    def add_edge(self, src: str, *dst: Any) -> AgentGraph:
+    def add_edge(self, src: str, *dst: Any) -> "AgentGraph":
         self._edges.setdefault(src, []).extend(dst)
         return self
 
-    def add_conditional_edge(self, src: str, router: Router) -> AgentGraph:
+    def add_conditional_edge(self, src: str, router: Router) -> "AgentGraph":
         self._routers[src] = router
         return self
 
-    def set_entry(self, *names: str) -> AgentGraph:
+    def set_entry(self, *names: str) -> "AgentGraph":
         self._entry = list(names)
         return self
 
-    def _successors(self, node: str, state: AgentState) -> list[Any]:
+    def _successors(self, node: str, state: AgentState) -> List[Any]:
         if node in self._routers:
-            return _as_list(self._routers[node](state))  # условное ребро приоритетнее
-        return _as_list(self._edges.get(node, [END]))  # нет ребра -> конец
+            return _as_list(self._routers[node](state))    # условное ребро приоритетнее
+        return _as_list(self._edges.get(node, [END]))      # нет ребра -> конец
 
-    def _run_frontier(self, frontier: list[str], state: AgentState, method: str) -> list[Any]:
+    def _run_frontier(self, frontier: List[str], state: AgentState, method: str) -> List[Any]:
         for name in frontier:
             if name not in self._nodes:
                 raise KeyError(f"Узел '{name}' не зарегистрирован")
 
-        if len(frontier) == 1:  # один узел — без пула
+        if len(frontier) == 1:                               # один узел — без пула
             return [getattr(self._nodes[frontier[0]], method)(state)]
 
         workers = self._max_workers or len(frontier)
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = [pool.submit(getattr(self._nodes[name], method), state) for name in frontier]
+            futures = [
+                pool.submit(getattr(self._nodes[name], method), state)
+                for name in frontier
+            ]
             return [f.result() for f in futures]
 
     # исполнение
@@ -76,7 +79,7 @@ class AgentGraph(Executable):
             raise ValueError("Не задан входной узел (set_entry)")
 
         state = _input if isinstance(_input, AgentState) else AgentState()
-        frontier: list[str] = list(dict.fromkeys(self._entry))  # dedup, порядок сохранён
+        frontier: List[str] = list(dict.fromkeys(self._entry))   # dedup, порядок сохранён
         steps = 0
 
         while frontier:
@@ -93,7 +96,7 @@ class AgentGraph(Executable):
                 elif isinstance(upd, dict):
                     state.merge(upd)
 
-            nxt: list[str] = []
+            nxt: List[str] = []
             for name in frontier:
                 for succ in self._successors(name, state):
                     if succ is not END:

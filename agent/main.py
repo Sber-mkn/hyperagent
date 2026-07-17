@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import Any, Callable
 
-from agent.completion import CompletionChecker
 from agent.config import (
     AGENT_MODEL,
     AGENT_NUM_CTX,
@@ -19,6 +17,7 @@ from agent.config import (
     OPENAI_BASE_URL,
     SUMMARIZER_MODEL,
 )
+from agent.completion import CompletionChecker
 from agent.llminterface.agent_graph.agent_state import AgentState
 from agent.llminterface.client.llm_client import LLMClient
 from agent.llminterface.client.providers.ollama_client import OllamaClient
@@ -28,12 +27,7 @@ from agent.react_agent import build_agent
 from agent.skills import SkillManager
 from agent.tools import tools_spec
 
-AGENT_TYPE_TO_PROVIDER = {
-    "local": "ollama",
-    "api": "openai",
-    "ollama": "ollama",
-    "openai": "openai",
-}
+AGENT_TYPE_TO_PROVIDER = {"local": "ollama", "api": "openai", "ollama": "ollama", "openai": "openai"}
 # The client's "api" session type is branded as OpenRouter (it collects an
 # OPENROUTER_API_KEY, not an OpenAI one) — default its base_url to OpenRouter's
 # real endpoint rather than falling through to OPENAI_BASE_URL's default of

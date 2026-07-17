@@ -1,36 +1,27 @@
 import inspect
 import json
 import re
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 _JSON_TYPES = {
-    str: "string",
-    int: "integer",
-    float: "number",
-    bool: "boolean",
-    list: "array",
-    dict: "object",
+    str: "string", int: "integer", float: "number",
+    bool: "boolean", list: "array", dict: "object",
 }
 
-_ARG_HDR = re.compile(r"^(args|arguments|parameters|params)\s*:\s*$", re.I)
-_SECTION = re.compile(
-    r"^(args|arguments|parameters|params|returns?|raises|yields|examples?|notes?)\s*:\s*$", re.I
-)
-_GOOGLE_PARAM = re.compile(
-    r"^(\w+)\s*(?:\([^)]*\))?\s*:\s*(.*)$"
-)  # name: desc  |  name (type): desc
-_SPHINX_PARAM = re.compile(r"^:param\s+(?:\w+\s+)?(\w+)\s*:\s*(.*)$")  # :param name: desc
+_ARG_HDR = re.compile(r'^(args|arguments|parameters|params)\s*:\s*$', re.I)
+_SECTION = re.compile(r'^(args|arguments|parameters|params|returns?|raises|yields|examples?|notes?)\s*:\s*$', re.I)
+_GOOGLE_PARAM = re.compile(r'^(\w+)\s*(?:\([^)]*\))?\s*:\s*(.*)$')      # name: desc  |  name (type): desc
+_SPHINX_PARAM = re.compile(r'^:param\s+(?:\w+\s+)?(\w+)\s*:\s*(.*)$')  # :param name: desc
 
 
-on_command: Callable[[dict[str, Any]], Any] | None = None
+on_command: Optional[Callable[[dict[str, Any]], Any]] = None
 # UI-specific hook for ask_user: whichever client is actually running (GUI or
 # console) wires this to something that can reach the real human, since a
 # plain input() has no interactive stdin to read in a GUI process. Left
 # unset, ask_user falls back to input() (e.g. a bare "python -m agent.main").
-on_ask_user: Callable[[str], str] | None = None
+on_ask_user: Optional[Callable[[str], str]] = None
 
 
 @dataclass
@@ -38,47 +29,47 @@ class Tool:
     name: str
     description: str
     func: Callable[..., Any]
-    parameters: dict[str, Any]  # JSON-schema объекта параметров
-    default_target: str = "server"  # куда всегда роутится вызов этого инструмента (фиксировано)
+    parameters: Dict[str, Any]                    # JSON-schema объекта параметров
+    default_target: str = "server"                # куда всегда роутится вызов этого инструмента (фиксировано)
 
     def __call__(self, **kwargs: Any) -> Any:
         return self.func(**kwargs)
 
 
-_REGISTRY: dict[str, Tool] = {}
+_REGISTRY: Dict[str, Tool] = {}
 
 
-def _parse_docstring(doc: str | None) -> tuple[str, dict[str, str]]:
+def _parse_docstring(doc: Optional[str]) -> Tuple[str, Dict[str, str]]:
     """Вернуть (краткое описание, {параметр: описание}) из docstring."""
     doc = inspect.cleandoc(doc or "")
     if not doc:
         return "", {}
 
     lines = doc.splitlines()
-    params: dict[str, str] = {}
-    summary: list[str] = []
+    params: Dict[str, str] = {}
+    summary: List[str] = []
     i, n = 0, len(lines)
 
     while i < n:
         line = lines[i].strip()
 
-        m = _SPHINX_PARAM.match(line)  # reST: :param name: ...
+        m = _SPHINX_PARAM.match(line)             # reST: :param name: ...
         if m:
             params[m.group(1)] = m.group(2).strip()
             i += 1
             continue
 
-        if _ARG_HDR.match(line):  # Google: Args:
+        if _ARG_HDR.match(line):                  # Google: Args:
             i += 1
-            base_indent: int | None = None
-            last: str | None = None
+            base_indent: Optional[int] = None
+            last: Optional[str] = None
             while i < n:
                 raw = lines[i]
                 s = raw.strip()
                 if not s:
                     i += 1
                     continue
-                if _SECTION.match(s):  # началась следующая секция
+                if _SECTION.match(s):             # началась следующая секция
                     break
                 indent = len(raw) - len(raw.lstrip())
                 if base_indent is None:
@@ -88,14 +79,14 @@ def _parse_docstring(doc: str | None) -> tuple[str, dict[str, str]]:
                     params[pm.group(1)] = pm.group(2).strip()
                     last = pm.group(1)
                     i += 1
-                elif last is not None:  # продолжение описания параметра
+                elif last is not None:            # продолжение описания параметра
                     params[last] = (params[last] + " " + s).strip()
                     i += 1
                 else:
                     break
             continue
 
-        if line.startswith(":") or _SECTION.match(line):  # прочие поля/секции — не в summary
+        if line.startswith(":") or _SECTION.match(line):   # прочие поля/секции — не в summary
             i += 1
             continue
 
@@ -110,12 +101,12 @@ DEFAULT_TARGET = "server"
 
 
 def _build_schema(
-    func: Callable[..., Any], param_docs: dict[str, str], default_target: str = "server"
-) -> dict[str, Any]:
-    props: dict[str, Any] = {}
-    required: list[str] = []
+        func: Callable[..., Any], param_docs: Dict[str, str], default_target: str = "server"
+) -> Dict[str, Any]:
+    props: Dict[str, Any] = {}
+    required: List[str] = []
     for pname, p in inspect.signature(func).parameters.items():
-        prop: dict[str, Any] = {"type": _JSON_TYPES.get(p.annotation, "string")}
+        prop: Dict[str, Any] = {"type": _JSON_TYPES.get(p.annotation, "string")}
         if pname in param_docs:
             prop["description"] = param_docs[pname]
         props[pname] = prop
@@ -137,21 +128,17 @@ def _describe_target(description: str, default_target: str) -> str:
     return f"{description} {note}".strip()
 
 
-def tool(
-    _func: Callable | None = None,
-    *,
-    name: str | None = None,
-    description: str | None = None,
-    parameters: dict[str, Any] | None = None,
-    default_target: str = "server",
-):
+def tool(_func: Optional[Callable] = None, *,
+         name: Optional[str] = None,
+         description: Optional[str] = None,
+         parameters: Optional[Dict[str, Any]] = None,
+         default_target: str = "server"):
     """Декоратор. Использование: @tool (всё берётся из docstring) либо
     @tool(name=..., description=..., parameters=..., default_target=...) для явного переопределения.
     default_target фиксирует, где инструмент ВСЕГДА выполняется — 'server' (в контейнере агента) или
     'client' (на машине пользователя, запустившей клиент); модель этот выбор изменить не может.
     Это же место (server/client) автоматически дописывается в конец description, которое видит модель,
     так что описание одиночного инструмента не может разойтись с тем, где он реально выполняется."""
-
     def deco(func: Callable[..., Any]) -> Callable[..., Any]:
         doc_summary, param_docs = _parse_docstring(func.__doc__)
         t = Tool(
@@ -163,7 +150,6 @@ def tool(
         )
         _REGISTRY[t.name] = t
         return func
-
     return deco(_func) if _func is not None else deco
 
 
@@ -171,26 +157,21 @@ def get_tool(name: str) -> Tool:
     return _REGISTRY[name]
 
 
-def all_tools() -> list[Tool]:
+def all_tools() -> List[Tool]:
     return list(_REGISTRY.values())
 
 
-def tools_spec() -> list[dict[str, Any]]:
+def tools_spec() -> List[Dict[str, Any]]:
     """Список схем в формате function-calling (Ollama/OpenAI)."""
     return [
-        {
-            "type": "function",
-            "function": {
-                "name": t.name,
-                "description": t.description,
-                "parameters": t.parameters,
-            },
-        }
+        {"type": "function", "function": {
+            "name": t.name, "description": t.description, "parameters": t.parameters,
+        }}
         for t in _REGISTRY.values()
     ]
 
 
-def _normalize_args(args: Any) -> dict[str, Any]:
+def _normalize_args(args: Any) -> Dict[str, Any]:
     if isinstance(args, str):
         args = json.loads(args or "{}")
     return dict(args or {})
@@ -207,7 +188,7 @@ def truncate_middle(text: str, max_chars: int) -> str:
     return f"{text[:head]}\n...[обрезано {cut} символов]...\n{text[-tail:]}"
 
 
-def tool_target(call: dict[str, Any]) -> str:
+def tool_target(call: Dict[str, Any]) -> str:
     """Куда выполнить вызов — это свойство самого инструмента (см. Tool.default_target),
     не выбор модели: схема инструмента не содержит поля target, так что откуда бы такое
     поле ни взялось в вызове (например, из старой истории), оно игнорируется."""
@@ -216,7 +197,7 @@ def tool_target(call: dict[str, Any]) -> str:
     return registered.default_target if registered else DEFAULT_TARGET
 
 
-def execute_tool(call: dict[str, Any]) -> tuple:
+def execute_tool(call: Dict[str, Any]) -> tuple:
     fn = call.get("function", call)
     name = fn["name"]
     args = _normalize_args(fn.get("arguments"))
@@ -238,7 +219,7 @@ def execute_tool_from_json(call: str) -> tuple:
         return name, f"[ошибка инструмента {name}: {e}]"
 
 
-def run_tool_calls(calls: list[dict[str, Any]]) -> list[tuple]:
+def run_tool_calls(calls: List[Dict[str, Any]]) -> List[tuple]:
     """Выполнить список tool-call'ов, вернуть [(name, result), ...].
     Несколько вызовов идут параллельно (потоки — инструменты I/O-bound)."""
     calls = list(calls or [])

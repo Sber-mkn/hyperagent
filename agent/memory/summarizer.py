@@ -20,7 +20,9 @@ class Summarizer:
         if not turns:
             return ""
 
-        history = "\n".join(json.dumps(turn.to_dict(), ensure_ascii=False) for turn in turns)
+        history = "\n".join(
+            json.dumps(turn.to_dict(), ensure_ascii=False) for turn in turns
+        )
         chat = LLMChat(
             [
                 {

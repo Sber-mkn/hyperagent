@@ -6,6 +6,7 @@ import re
 
 from agent.tools.registry import tool, truncate_middle
 
+
 MAX_SKILL_CHARS = 20_000
 _SKILL_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 

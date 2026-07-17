@@ -1,13 +1,12 @@
 import json
-from collections.abc import Callable
 from datetime import datetime
-from typing import Any, ClassVar
 
 import requests
 
-from agent.llminterface.client.llm_chat import LLMChat, LLMDuration, LLMMessage, LLMTokens
+from agent.llminterface.client.llm_chat import LLMMessage, LLMChat, LLMTokens, LLMDuration
 from agent.llminterface.client.llm_client import LLMClient
 
+from typing import Optional, List, Dict, Any, Generator, Callable
 
 class OllamaClient(LLMClient):
     """Класс для работы с провайдером Ollama"""
@@ -16,14 +15,7 @@ class OllamaClient(LLMClient):
     default_ollama_options: dict
     default_model_options: dict
 
-    TOP_LEVEL_KEYS: ClassVar[set[str]] = {
-        "model",
-        "messages",
-        "stream",
-        "format",
-        "keep_alive",
-        "tools",
-    }
+    TOP_LEVEL_KEYS = {"model", "messages", "stream", "format", "keep_alive", "tools"}
 
     @classmethod
     def _split_params(cls, parameters: dict) -> tuple[dict, dict]:
@@ -41,28 +33,34 @@ class OllamaClient(LLMClient):
 
     def _create_temp_params(self, parameters: dict) -> tuple[dict, dict]:
         ollama_options, model_options = self._split_params(parameters)
-        return {**self.default_ollama_options, **ollama_options}, {
-            **self.default_model_options,
-            **model_options,
-        }
+        return {**self.default_ollama_options, **ollama_options}, {**self.default_model_options, **model_options}
 
-    def _create_payload(self, parameters) -> dict[str, Any]:
+    def _create_payload(self, parameters) -> Dict[str, Any]:
         temp_ollama_options, temp_model_options = self._create_temp_params(parameters)
-        payload = {**temp_ollama_options, "options": temp_model_options}
+        payload = {
+            **temp_ollama_options,
+            "options": temp_model_options
+        }
         return payload
 
-    def __init__(self, url: str, timeout: int = 600, **parameters):
+    def __init__(
+            self,
+            url: str,
+            timeout: int = 600,
+            **parameters
+    ):
         self._url = url
         self.timeout = timeout
         self.default_ollama_options, self.default_model_options = self._split_params(parameters)
 
+
     @staticmethod
-    def _ns_to_s(value: int | None) -> float | None:
+    def _ns_to_s(value: Optional[int]) -> Optional[float]:
         """Ollama отдаёт длительности в наносекундах — переводим в секунды,
         чтобы значения помещались в БД (см. duration_* колонки в llmchat)."""
         return value / 1e9 if value is not None else None
 
-    def _parse_response(self, response: dict[str, Any]) -> LLMMessage:
+    def _parse_response(self, response: Dict[str, Any]) -> LLMMessage:
         message = response.get("message", {})
 
         return LLMMessage(
@@ -86,7 +84,11 @@ class OllamaClient(LLMClient):
             dt=datetime.now(),
         )
 
-    def send(self, chat: LLMChat, **kwargs: int | float | str | bool) -> LLMChat:
+    def send(
+            self,
+            chat: LLMChat,
+            **kwargs: int | float | str | bool
+    ) -> LLMChat:
         payload = self._create_payload(kwargs)
         payload["messages"] = chat.to_payload()
         payload["stream"] = False
@@ -97,11 +99,11 @@ class OllamaClient(LLMClient):
         return chat + self._parse_response(response.json())
 
     def stream(
-        self,
-        chat: LLMChat,
-        on_chunk_think: Callable[[str], None] | None = None,
-        on_chunk_content: Callable[[str], None] | None = None,
-        **kwargs: int | float | str | bool,
+            self,
+            chat: LLMChat,
+            on_chunk_think: Optional[Callable[[str], None]]=None,
+            on_chunk_content: Optional[Callable[[str], None]]=None,
+            **kwargs: int | float | str | bool
     ) -> LLMChat:
         payload = self._create_payload(kwargs)
         payload["messages"] = chat.to_payload()
@@ -113,7 +115,7 @@ class OllamaClient(LLMClient):
             thinking="",
             content="",
             provider="ollama",
-            model=payload.get("model", ""),
+            model=payload.get("model", "")
         )
 
         response = requests.post(self._url, json=payload, stream=True, timeout=self.timeout)
@@ -149,7 +151,7 @@ class OllamaClient(LLMClient):
                         on_chunk_content(delta.content)
         finally:
             if not llm_message.done:
-                llm_message.done = True
-                llm_message.done_reason = "cancelled"
+                llm_message.done=True
+                llm_message.done_reason="cancelled"
                 response.close()
         return chat + llm_message

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import Any, Callable
 
 from agent.llminterface.agent_chain.execs import ExecEffect, ExecLambda, ExecUpdate
 from agent.llminterface.agent_graph.agent_graph import END, AgentGraph
@@ -12,6 +11,7 @@ from agent.llminterface.client.llm_client import LLMClient
 from agent.memory import Turn
 from agent.tools import execute_tool, tool_target, tools_spec, truncate_middle
 from agent.tools.skills_list import skills_list
+
 
 MAX_TOOL_RESULT_CHARS = 24_000
 TOOL_PREVIEW_CHARS = 300
@@ -32,7 +32,9 @@ def build_agent(client: LLMClient) -> AgentGraph:
         chat = state["memory_context"].build_chat()
         feedback = state.get("completion_feedback")
         if feedback:
-            chat += LLMMessage.from_message({"role": "user", "content": feedback})
+            chat += LLMMessage.from_message(
+                {"role": "user", "content": feedback}
+            )
         data["chat"] = chat
         data["completion_feedback"] = ""
         data["iterations"] = state.get("iterations", 0) + 1
@@ -217,7 +219,8 @@ def build_agent(client: LLMClient) -> AgentGraph:
         )
         if learned_skills:
             details = "\n".join(
-                f"Name: {skill.name}\nSaved to: {skill.path.as_posix()}" for skill in learned_skills
+                f"Name: {skill.name}\nSaved to: {skill.path.as_posix()}"
+                for skill in learned_skills
             )
             _emit(
                 state.get("on_content"),
@@ -226,7 +229,8 @@ def build_agent(client: LLMClient) -> AgentGraph:
         else:
             _emit(
                 state.get("on_content"),
-                f"\n\n[Skill not created]\nReason: {skill_manager.last_reason}",
+                "\n\n[Skill not created]\n"
+                f"Reason: {skill_manager.last_reason}",
             )
         return {"answer": answer}
 
@@ -249,7 +253,9 @@ def build_agent(client: LLMClient) -> AgentGraph:
         return {"answer": answer}
 
     def limit_node(state):
-        raise RuntimeError(f"Agent exceeded {state['max_iterations']} model iterations")
+        raise RuntimeError(
+            f"Agent exceeded {state['max_iterations']} model iterations"
+        )
 
     return (
         AgentGraph()
