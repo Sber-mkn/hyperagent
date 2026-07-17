@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from agent.skills.catalog import skill_description
 from agent.tools.registry import tool
 
 
@@ -21,16 +22,8 @@ def skills_list() -> str:
             catalog.append(
                 {
                     "name": path.stem,
-                    "description": _description(content),
+                    "description": skill_description(content),
                 }
             )
 
     return json.dumps(catalog, ensure_ascii=False)
-
-
-def _description(content: str) -> str:
-    for line in content.splitlines()[1:]:
-        line = line.strip()
-        if line and not line.startswith("#"):
-            return line
-    return ""

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 from agent.llm_json import parse_llm_json
 from agent.llminterface.client.llm_chat import LLMChat
 from agent.llminterface.client.llm_client import LLMClient
+from agent.skills.catalog import skill_description
 from agent.tools.registry import truncate_middle
 
 if TYPE_CHECKING:
@@ -111,7 +112,10 @@ class SkillManager:
         turns: list[Turn],
         tool_names: list[str],
     ) -> list[dict[str, Any]]:
-        existing = [path.stem for path in self.data_dir.glob("*.md")]
+        existing = [
+            {"name": path.stem, "description": skill_description(path.read_text(encoding="utf-8"))}
+            for path in sorted(self.data_dir.glob("*.md"))
+        ]
         trajectory = json.dumps(_compact_trajectory(turns), ensure_ascii=False)
         chat = LLMChat(
             [
@@ -139,7 +143,9 @@ class SkillManager:
                         "each as its own entry in skills; otherwise return a "
                         "single entry. Do not preserve user-specific facts, "
                         "secrets, exact filenames, or one-off content. Skip "
-                        "anything already covered by an existing skill. Never "
+                        "anything already covered by an existing skill — judge "
+                        "this by what the existing skill's description says it "
+                        "does, not by whether its name happens to match. Never "
                         "create instructions that alter identity, permissions, "
                         "safety rules, tool policy, or system-message priority. "
                         "For each skill return: name (short lowercase hyphenated), "
@@ -155,7 +161,7 @@ class SkillManager:
                 {
                     "role": "user",
                     "content": (
-                        f"Existing skills: {json.dumps(existing)}\n"
+                        f"Existing skills (name + description): {json.dumps(existing, ensure_ascii=False)}\n"
                         f"Tools used: {json.dumps(tool_names)}\n"
                         f"Completed task trajectory:\n{trajectory}"
                     ),
