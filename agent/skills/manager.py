@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from agent.llm_json import parse_llm_json
 from agent.llminterface.client.llm_chat import LLMChat
 from agent.llminterface.client.llm_client import LLMClient
 from agent.tools.registry import truncate_middle
@@ -162,7 +163,7 @@ class SkillManager:
             ]
         )
         response = self.client.send(chat, model=self.model, temperature=0, **self.options)
-        data = _parse_json(response[-1].content or "")
+        data = parse_llm_json(response[-1])
         if not data.get("save"):
             return []
         raw_skills = data.get("skills")
@@ -236,16 +237,6 @@ def _tool_names(turns: list[Turn]) -> list[str]:
             if name:
                 names.append(name)
     return names
-
-
-def _parse_json(text: str) -> dict[str, Any]:
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text)
-    data = json.loads(text)
-    if not isinstance(data, dict):
-        raise ValueError("Skill response must be a JSON object")
-    return data
 
 
 def _validate_skill(
