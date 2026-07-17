@@ -17,14 +17,22 @@ python -m agent.run_demo "Create workdir/hello.py that prints hello and run it"
 ## Quick start (Docker — full stack)
 
 ```bash
-cp agent/.env.example agent/.env
-# Edit OPENROUTER_API_KEY in agent/.env
-
-docker compose up --build -d
-docker exec -it hyperagent_client python -m client.main
+docker-compose --profile router up --build
 ```
 
-Send a task at the prompt, e.g.:
+Then start the client from the sibling repository:
+
+```bash
+cd ../hyperagent-client
+pip install -r requirements.txt
+python -m client.qt_main
+```
+
+Log in in the client UI. The client sends login/password to the router first;
+after that the router starts or reuses the user's agent containers and returns
+personal RabbitMQ connection data.
+
+Send a task in the client, e.g.:
 
 ```
 Create /hyperagent/workdir/hello.py that prints hello, then run it with run_python
@@ -39,7 +47,7 @@ Wait for `--- Result ---` (15–30s). Files appear in `./workdir/` on the host.
 | `agent/` | V3 mutable agent (ReAct loop, memory, tools, LLM clients) |
 | `agent_immutable/` | Immutable entry — RabbitMQ, try/except, calls `agent_logic()` |
 | `supervisor/` | Git snapshots, rollback, container restart |
-| `client/` | CLI — sends tasks via RabbitMQ |
+| `../hyperagent-client/` | Standalone client repository |
 | `constitution/` | Read-only L0 rules (mounted ro in Docker) |
 | `database/` | Postgres schema + CRUD for snapshots |
 | `rabbitmq/` | Exchange, queues, shared service |
@@ -67,12 +75,11 @@ Docker also sets: `V3_DATA_DIR`, `AGENT_WORKDIR`, `AGENT_ROOT` (see `docker-comp
 | `db` | 5432 | admin/12345, `hyperagent_db` |
 | `agent` | — | Restarts per task |
 | `supervisor` | — | Handles commit/ack/error |
-| `client` | — | Interactive stdin |
 
 ## Verification checklist (Devin / CI)
 
 1. **Local:** `python -m agent.run_demo` → `tool_calls >= 2`, answer printed
-2. **Docker:** client task → `status: success`, file in `workdir/`
+2. **Docker:** external client task → `status: success`, file in `workdir/`
 3. **Import:** `from agent.main import agent_logic` inside agent container
 4. **Logs:** agent shows `--- step N ---` and `tool write_file:`
 
