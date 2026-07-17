@@ -22,6 +22,12 @@ on_command: Optional[Callable[[dict[str, Any]], Any]] = None
 # plain input() has no interactive stdin to read in a GUI process. Left
 # unset, ask_user falls back to input() (e.g. a bare "python -m agent.main").
 on_ask_user: Optional[Callable[[str], str]] = None
+# True only inside the agent's own process (set by agent_immutable/main.py
+# alongside on_command) -- never true in the client process, even though both
+# run the exact same agent.tools code. Lets a tool whose call can land on
+# either side (run_bash/run_powershell/run_python) tell, from inside its own
+# function body, which side it is actually executing on right now.
+running_on_server: bool = False
 
 
 @dataclass
@@ -30,7 +36,8 @@ class Tool:
     description: str
     func: Callable[..., Any]
     parameters: Dict[str, Any]                    # JSON-schema объекта параметров
-    default_target: str = "server"                # куда всегда роутится вызов этого инструмента (фиксировано)
+    default_target: str = "server"                # куда роутится вызов, если модель не указала target явно
+    allowed_targets: frozenset = frozenset({"server"})  # весь набор допустимых target для этого инструмента
 
     def __call__(self, **kwargs: Any) -> Any:
         return self.func(**kwargs)
@@ -101,7 +108,10 @@ DEFAULT_TARGET = "server"
 
 
 def _build_schema(
-        func: Callable[..., Any], param_docs: Dict[str, str], default_target: str = "server"
+        func: Callable[..., Any],
+        param_docs: Dict[str, str],
+        default_target: str = "server",
+        allowed_targets: frozenset = frozenset({"server"}),
 ) -> Dict[str, Any]:
     props: Dict[str, Any] = {}
     required: List[str] = []
@@ -112,8 +122,18 @@ def _build_schema(
         props[pname] = prop
         if p.default is inspect.Parameter.empty:
             required.append(pname)
-    # Where a tool runs is fixed per-tool (see Tool.default_target), not a
-    # model choice -- no "target" property is exposed here.
+    # A tool locked to a single target has nothing to choose -- no "target"
+    # property is exposed. A tool allowed on more than one target exposes it
+    # so the model can pick, defaulting to default_target if omitted.
+    if len(allowed_targets) > 1:
+        props[TARGET_PARAM] = {
+            "type": "string",
+            "enum": sorted(allowed_targets),
+            "description": (
+                f"Где выполнить инструмент (по умолчанию '{default_target}'): 'server' — в контейнере "
+                "агента, 'client' — на машине пользователя, запустившей клиент."
+            ),
+        }
     return {"type": "object", "properties": props, "required": required}
 
 
@@ -123,8 +143,14 @@ _TARGET_NOTE = {
 }
 
 
-def _describe_target(description: str, default_target: str) -> str:
-    note = _TARGET_NOTE.get(default_target, f"[Выполняется на: {default_target}.]")
+def _describe_target(description: str, default_target: str, allowed_targets: frozenset) -> str:
+    if len(allowed_targets) > 1:
+        note = (
+            f"[Может выполняться и на сервере (в контейнере агента), и на клиенте (на машине "
+            f"пользователя) — выбирается параметром target, по умолчанию '{default_target}'.]"
+        )
+    else:
+        note = _TARGET_NOTE.get(default_target, f"[Выполняется на: {default_target}.]")
     return f"{description} {note}".strip()
 
 
@@ -132,21 +158,29 @@ def tool(_func: Optional[Callable] = None, *,
          name: Optional[str] = None,
          description: Optional[str] = None,
          parameters: Optional[Dict[str, Any]] = None,
-         default_target: str = "server"):
+         default_target: str = "server",
+         allowed_targets: Optional[Tuple[str, ...]] = None):
     """Декоратор. Использование: @tool (всё берётся из docstring) либо
-    @tool(name=..., description=..., parameters=..., default_target=...) для явного переопределения.
-    default_target фиксирует, где инструмент ВСЕГДА выполняется — 'server' (в контейнере агента) или
-    'client' (на машине пользователя, запустившей клиент); модель этот выбор изменить не может.
-    Это же место (server/client) автоматически дописывается в конец description, которое видит модель,
-    так что описание одиночного инструмента не может разойтись с тем, где он реально выполняется."""
+    @tool(name=..., description=..., parameters=..., default_target=..., allowed_targets=...)
+    для явного переопределения.
+    default_target — куда роутится вызов, если модель не указала target явно (или если инструмент
+    вообще не выбирает target — тогда это единственное место, где он выполняется).
+    allowed_targets — весь набор допустимых target для инструмента; по умолчанию это только
+    {default_target} (инструмент жёстко привязан к одному месту, модель это не выбирает). Передай
+    allowed_targets=("server", "client"), чтобы модель могла выбирать target для каждого вызова —
+    используется для run_bash/run_powershell/run_python, у которых оба места осмысленны.
+    Набор allowed_targets автоматически дописывается в конец description, которое видит модель,
+    так что описание инструмента не может разойтись с тем, где он реально может выполняться."""
     def deco(func: Callable[..., Any]) -> Callable[..., Any]:
         doc_summary, param_docs = _parse_docstring(func.__doc__)
+        targets = frozenset(allowed_targets) if allowed_targets else frozenset({default_target})
         t = Tool(
             name=name or func.__name__,
-            description=_describe_target(description or doc_summary, default_target),
+            description=_describe_target(description or doc_summary, default_target, targets),
             func=func,
-            parameters=parameters or _build_schema(func, param_docs, default_target),
+            parameters=parameters or _build_schema(func, param_docs, default_target, targets),
             default_target=default_target,
+            allowed_targets=targets,
         )
         _REGISTRY[t.name] = t
         return func
@@ -189,12 +223,21 @@ def truncate_middle(text: str, max_chars: int) -> str:
 
 
 def tool_target(call: Dict[str, Any]) -> str:
-    """Куда выполнить вызов — это свойство самого инструмента (см. Tool.default_target),
-    не выбор модели: схема инструмента не содержит поля target, так что откуда бы такое
-    поле ни взялось в вызове (например, из старой истории), оно игнорируется."""
+    """Куда выполнить вызов. Для инструмента, жёстко привязанного к одному месту
+    (allowed_targets содержит один элемент), это всегда его default_target — схема
+    вообще не содержит поля target, так что если оно всё же где-то возникло (например,
+    из старой истории), оно игнорируется. Для инструмента с несколькими allowed_targets
+    (run_bash/run_powershell/run_python) уважается явный target из аргументов модели,
+    если он входит в allowed_targets; иначе используется default_target."""
     fn = call.get("function", call)
     registered = _REGISTRY.get(fn.get("name"))
-    return registered.default_target if registered else DEFAULT_TARGET
+    if registered is None:
+        return DEFAULT_TARGET
+    args = _normalize_args(fn.get("arguments"))
+    explicit = args.get(TARGET_PARAM)
+    if explicit and explicit in registered.allowed_targets:
+        return explicit
+    return registered.default_target
 
 
 def execute_tool(call: Dict[str, Any]) -> tuple:

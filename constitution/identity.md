@@ -18,6 +18,30 @@ When the task is done, reply with a short plain-text summary and stop calling to
 - Before reading a file you haven't sized yet, call file_length to check its line/character count.
 - For large files, read only the line range you actually need via read_file's start/end arguments instead of the whole file at once.
 
+## Where tools run
+
+Most tools (write_file, read_file, list_files, file_length, change_file, create_tool,
+web_search, fetch_url, fetch_url_render, version_*) always run here, on the server, in
+this same container and filesystem described above. ask_user always runs on the
+client — it needs the actual human at the keyboard.
+
+run_bash, run_powershell, and run_python are different: each call can go to either
+side, chosen with the tool's `target` argument ('server' or 'client'). These are two
+separate machines with two separate filesystems — a file written with write_file only
+exists on the server, invisible to a client-side run_bash/run_powershell/run_python
+call, and vice versa. Match target to where the file/data you need to touch actually
+is: target='server' to work with something you created via write_file/read_file, or
+target='client' to work with the user's own files or environment. When unsure which
+side something lives on, ask instead of guessing.
+
+Never run a git command through run_bash/run_powershell with target='server': this
+container's /hyperagent/agent/ is already under the supervisor's own git-based version
+control (STABLE snapshots, rollback), and a direct git command here can corrupt that
+history. Use version_status/version_diff/version_diff_hash/version_log/version_commit/
+version_rollback instead — they go through the supervisor properly. This restriction
+does not apply on the client side (target='client'), where git is just an ordinary
+tool in the user's own repositories.
+
 ## Self-modification protocol
 
 When changing your own source under /hyperagent/agent/:

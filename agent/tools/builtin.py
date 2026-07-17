@@ -238,9 +238,33 @@ def _bash_env() -> dict:
     return env
 
 
-@tool(default_target="client")
+_GIT_WORD = re.compile(r"\bgit\b", re.IGNORECASE)
+
+
+def _reject_git_on_server(command: str) -> str | None:
+    """The server (agent container) is already under its own git-based version
+    control (STABLE snapshots, rollback, managed by the supervisor) -- a git
+    command run directly from inside run_bash/run_powershell on the server
+    could corrupt that history out from under the supervisor. Force such
+    commands through the dedicated version_* tools instead, which go through
+    the supervisor properly. Not a restriction on the client side, where the
+    user's own repositories are exactly what git is for."""
+    if registry.running_on_server and _GIT_WORD.search(command):
+        return (
+            "[git недоступен в run_bash/run_powershell на сервере (в контейнере агента) — "
+            "используй version_status/version_diff/version_diff_hash/version_log/"
+            "version_commit/version_rollback вместо прямых git-команд]"
+        )
+    return None
+
+
+@tool(default_target="client", allowed_targets=("server", "client"))
 def run_bash(command: str, timeout: int = 60, limit: int = 4000) -> str:
-    """Выполнить команду bash на машине пользователя и вернуть её вывод.
+    """Выполнить команду bash и вернуть её вывод. Можно запустить на сервере (в контейнере
+    агента, та же файловая система, что у write_file/read_file/list_files/create_tool) или на
+    машине пользователя (та же файловая система, что видит пользователь) — см. параметр target.
+    На сервере команды с git запрещены — используй version_status/version_diff/version_log/
+    version_commit/version_rollback вместо этого.
 
     Args:
         command: команда для оболочки bash.
@@ -248,6 +272,9 @@ def run_bash(command: str, timeout: int = 60, limit: int = 4000) -> str:
         limit: максимум символов вывода. По умолчанию небольшой — если ожидаешь длинный вывод,
             который весь тебе нужен (например, большой JSON), увеличивай значение (до 20000).
     """
+    blocked = _reject_git_on_server(command)
+    if blocked:
+        return blocked
     try:
         proc = subprocess.run(
             [_find_bash(), "-lc", command],
@@ -269,9 +296,13 @@ def _find_powershell() -> str:
     return shutil.which("pwsh") or "powershell"
 
 
-@tool(default_target="client")
+@tool(default_target="client", allowed_targets=("server", "client"))
 def run_powershell(command: str, timeout: int = 60, limit: int = 4000) -> str:
-    """Выполнить команду PowerShell на машине пользователя и вернуть её вывод.
+    """Выполнить команду PowerShell и вернуть её вывод. Можно запустить на сервере (в контейнере
+    агента, та же файловая система, что у write_file/read_file/list_files/create_tool) или на
+    машине пользователя (та же файловая система, что видит пользователь) — см. параметр target.
+    На сервере команды с git запрещены — используй version_status/version_diff/version_log/
+    version_commit/version_rollback вместо этого.
 
     Args:
         command: команда для PowerShell.
@@ -279,6 +310,9 @@ def run_powershell(command: str, timeout: int = 60, limit: int = 4000) -> str:
         limit: максимум символов вывода. По умолчанию небольшой — если ожидаешь длинный вывод,
             который весь тебе нужен (например, большой JSON), увеличивай значение (до 20000).
     """
+    blocked = _reject_git_on_server(command)
+    if blocked:
+        return blocked
     try:
         proc = subprocess.run(
             [_find_powershell(), "-NoProfile", "-NonInteractive", "-Command", command],
@@ -293,9 +327,11 @@ def run_powershell(command: str, timeout: int = 60, limit: int = 4000) -> str:
     return truncate_middle(out, min(limit, MAX_LIMIT_CHARS))
 
 
-@tool(default_target="client")
+@tool(default_target="client", allowed_targets=("server", "client"))
 def run_python(code: str, timeout: int = 60, limit: int = 4000) -> str:
-    """Выполнить Python-код на машине пользователя и вернуть стандартный вывод.
+    """Выполнить Python-код и вернуть стандартный вывод. Можно запустить на сервере (в контейнере
+    агента, та же файловая система, что у write_file/read_file/list_files/create_tool) или на
+    машине пользователя (та же файловая система, что видит пользователь) — см. параметр target.
 
     Args:
         code: исходный код на Python.
