@@ -1,0 +1,62 @@
+{
+  "users": [
+    {
+      "name": "router",
+      "password": "12345",
+      "tags": "administrator"
+    },
+    {
+      "name": "client",
+      "password": "12345",
+      "tags": ""
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "router",
+      "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    },
+    {
+      "user": "client",
+      "vhost": "/",
+      "configure": ".*",
+      "write": "^(router_exchange|amq\\.default)$",
+      "read": "^(client_queue|amq\\.gen-.*)$"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "router_exchange",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false
+    }
+  ],
+  "queues": [
+    {
+      "name": "router_queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false
+    }
+  ],
+  "bindings": [
+    {
+      "source": "router_exchange",
+      "vhost": "/",
+      "destination": "router_queue",
+      "destination_type": "queue",
+      "routing_key": "router",
+      "arguments": {}
+    }
+  ]
+}

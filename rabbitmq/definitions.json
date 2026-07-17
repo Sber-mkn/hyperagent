@@ -1,0 +1,109 @@
+{
+  "users": [
+    {
+      "name": "agent",
+      "password": "12345",
+      "tags": ""
+    },
+    {
+      "name": "supervisor",
+      "password": "12345",
+      "tags": ""
+    },
+    {
+      "name": "client",
+      "password": "12345",
+      "tags": ""
+    },
+    {
+      "name": "admin",
+      "password": "admin",
+      "tags": "administrator"
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "agent",
+      "vhost": "/",
+      "configure": ".*",
+      "write": "^(agent_exchange|amq\\.default)$",
+      "read": "^(agent_queue|amq\\.gen-.*)$"
+    },
+    {
+      "user": "supervisor",
+      "vhost": "/",
+      "configure": ".*",
+      "write": "^(agent_exchange|amq\\.default)$",
+      "read": "^(supervisor_queue|amq\\.gen-.*)$"
+    },
+    {
+      "user": "client",
+      "vhost": "/",
+      "configure": ".*",
+      "write": "^(agent_exchange|amq\\.default)$",
+      "read": "^(client_queue|amq\\.gen-.*)$"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "agent_exchange",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false
+    }
+  ],
+  "queues": [
+    {
+      "name": "supervisor_queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false
+    },
+    {
+      "name": "agent_queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false
+    },
+    {
+      "name": "client_queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false
+    }
+  ],
+  "bindings": [
+    {
+      "source": "agent_exchange",
+      "vhost": "/",
+      "destination": "agent_queue",
+      "destination_type": "queue",
+      "routing_key": "agent",
+      "arguments": {}
+    },
+    {
+      "source": "agent_exchange",
+      "vhost": "/",
+      "destination": "supervisor_queue",
+      "destination_type": "queue",
+      "routing_key": "supervisor",
+      "arguments": {}
+    },
+    {
+      "source": "agent_exchange",
+      "vhost": "/",
+      "destination": "client_queue",
+      "destination_type": "queue",
+      "routing_key": "client",
+      "arguments": {}
+    }
+  ]
+}
+
+

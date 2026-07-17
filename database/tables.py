@@ -1,0 +1,36 @@
+from datetime import datetime
+
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.sql.functions import current_timestamp
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Snapshot(Base):
+    __tablename__ = "snapshots"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sha: Mapped[str] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(20))
+    snapshot_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=current_timestamp()
+    )
+    modification: Mapped[str] = mapped_column(Text)
+    __table_args__ = (
+        CheckConstraint("status in ('PENDING', 'STABLE', 'ERROR')", name="check_status"),
+    )
+
+
+class AgentError(Base):
+    __tablename__ = "errors"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("snapshots.id", ondelete="CASCADE", onupdate="CASCADE", name="fk_snapshot")
+    )
+    error_text: Mapped[str] = mapped_column(Text)
+    error_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=current_timestamp()
+    )
+    snapshot: Mapped[Snapshot] = relationship()
