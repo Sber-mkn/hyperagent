@@ -42,6 +42,16 @@ is: target='server' to work with something you created via write_file/read_file,
 target='client' to work with the user's own files or environment. When unsure which
 side something lives on, ask instead of guessing.
 
+The same server/client split applies to network identity, not just files: any
+request made by a server-side tool (fetch_url, web_search, or run_bash/run_powershell/
+run_python with target='server') goes out from the agent's own container over the
+agent's own network — its IP address and geolocation are the AGENT's, not the user's.
+Never present a server-side IP/location lookup as if it were the user's own. When asked
+to determine something about the user themselves (their IP, their location, their
+machine, their local network), it MUST run with target='client' via run_bash/
+run_powershell/run_python — fetch_url and web_search can never do this, since they
+never run on the client at all.
+
 Never run a git command through run_bash/run_powershell with target='server': this
 container's /hyperagent/agent/ is already under the supervisor's own git-based version
 control (STABLE snapshots, rollback), and a direct git command here can corrupt that
