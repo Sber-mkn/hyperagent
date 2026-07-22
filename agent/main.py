@@ -64,15 +64,14 @@ def agent_logic(
     agent_session = agent_session or {}
     agent_config = agent_session.get("agent_config") or {}
     client, model_options = _build_client(agent_session.get("agent_type"), agent_config)
-    requested_model = agent_config.get("AGENT_MODEL")
-    model = requested_model if requested_model and requested_model != "auto" else AGENT_MODEL
+    model, auxiliary_model = _resolve_models(agent_config)
 
     store = MemoryStore.from_llm_chat(
         llm_chat,
         L2_TOKEN_BUDGET,
         l3_memory=l3_memory,
     )
-    skill_manager = SkillManager.open(client, SUMMARIZER_MODEL, DATA_DIR / "skills", model_options)
+    skill_manager = SkillManager.open(client, auxiliary_model, DATA_DIR / "skills", model_options)
     agent = build_agent(client)
     final = agent.stream(
         AgentState(
@@ -89,8 +88,8 @@ def agent_logic(
                     store,
                     recovery_notice=_rollback_notice(error_text),
                 ),
-                "memory_summarizer": Summarizer(client, SUMMARIZER_MODEL, model_options),
-                "completion_checker": CompletionChecker(client, SUMMARIZER_MODEL, model_options),
+                "memory_summarizer": Summarizer(client, auxiliary_model, model_options),
+                "completion_checker": CompletionChecker(client, auxiliary_model, model_options),
                 "skill_manager": skill_manager,
                 "max_iterations": MAX_ITERATIONS,
                 "on_think": on_think,
@@ -124,14 +123,35 @@ def _build_client(
         if agent_type == "api":
             base_url = OPENROUTER_DEFAULT_BASE_URL
             api_key = agent_config.get("OPENROUTER_API_KEY") or OPENAI_API_KEY
+            key_name = "OPENROUTER_API_KEY"
         else:
             base_url = OPENAI_BASE_URL
             api_key = agent_config.get("OPENAI_API_KEY") or OPENAI_API_KEY
+            key_name = "OPENROUTER_API_KEY" if provider == "openrouter" else "OPENAI_API_KEY"
+        if not api_key:
+            raise ValueError(f"{key_name} is required for provider '{provider}'")
         return (
             OpenaiClient(base_url=base_url, api_key=api_key),
             {"max_tokens": MAX_OUTPUT_TOKENS},
         )
     raise ValueError(f"Unsupported LLM_PROVIDER: {provider}")
+
+
+def _resolve_models(agent_config: dict[str, Any]) -> tuple[str, str]:
+    session_model = _model_name(agent_config.get("AGENT_MODEL"))
+    model = session_model or _model_name(AGENT_MODEL)
+    if not model:
+        raise ValueError("AGENT_MODEL must be configured")
+
+    auxiliary_model = _model_name(agent_config.get("SUMMARIZER_MODEL"))
+    if not auxiliary_model:
+        auxiliary_model = model if session_model else _model_name(SUMMARIZER_MODEL) or model
+    return model, auxiliary_model
+
+
+def _model_name(value: Any) -> str | None:
+    model = str(value or "").strip()
+    return model if model and model.lower() != "auto" else None
 
 
 def _ollama_chat_url(base_url: str) -> str:
