@@ -76,12 +76,16 @@ class GitService:
         else:
             logger.info("Repository has commits")
 
-            self.check()
+            # Whatever the container starts with is the deployment's baseline,
+            # not an unproven change by the agent. Recording it as PENDING used
+            # to leave "Initial commit" as the only STABLE snapshot forever, so
+            # every rollback threw the agent back to the day it was created.
+            self.check(is_stable=True)
 
-    def check(self):
+    def check(self, is_stable: bool = False):
         self.add()
         if self.status():
-            self.commit("Uncommited changes")
+            self.commit("Uncommited changes", is_stable=is_stable)
 
     def has_commit(self) -> bool:
         logger.info(self._current_revision_command().return_code)

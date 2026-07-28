@@ -91,4 +91,5 @@ class RabbitMQAgent(RabbitMQBase):
             self.llm_chat,
             self.l3_memory,
             self.agent_session,
+            self.replayed_task,
         )

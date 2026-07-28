@@ -18,6 +18,7 @@ from agent.config import (
     OPENAI_API_KEY,
     OPENAI_BASE_URL,
     SUMMARIZER_MODEL,
+    ollama_chat_url,
 )
 from agent.llminterface.agent_graph.agent_state import AgentState
 from agent.llminterface.client.llm_client import LLMClient
@@ -49,6 +50,7 @@ def agent_logic(
     l3_memory: dict[str, Any] | None = None,
     agent_session: dict[str, Any] | None = None,
     error_text: str = "",
+    replayed_task: bool = False,
     on_think: Callable[[str], Any] | None = None,
     on_content: Callable[[str], Any] | None = None,
     on_title: Callable[[str], Any] | None = None,
@@ -82,7 +84,11 @@ def agent_logic(
                 "tools": tools_spec(),
                 "memory_store": store,
                 "external_history": llm_chat is not None,
-                "resume_task": bool(error_text),
+                # The supervisor replays the same task after a rollback (with a
+                # traceback) and after a version_commit restart (without one) —
+                # both already have this task in stored history, so neither may
+                # append it a second time.
+                "resume_task": bool(error_text) or replayed_task,
                 "agent_session": agent_session,
                 "memory_context": ContextManager(
                     store,
@@ -113,8 +119,10 @@ def _build_client(
     provider = AGENT_TYPE_TO_PROVIDER.get(agent_type, LLM_PROVIDER)
 
     if provider == "ollama":
+        # "local" is the backend's own model (OLLAMA_URL, configured server-side);
+        # "ollama" is a model the user pointed the server at from the client.
         client_url = agent_config.get("OLLAMA_URL")
-        url = _ollama_chat_url(client_url) if client_url else OLLAMA_URL
+        url = ollama_chat_url(client_url) if client_url else OLLAMA_URL
         return OllamaClient(url=url), {
             "num_ctx": AGENT_NUM_CTX,
             "num_predict": MAX_OUTPUT_TOKENS,
@@ -152,18 +160,6 @@ def _resolve_models(agent_config: dict[str, Any]) -> tuple[str, str]:
 def _model_name(value: Any) -> str | None:
     model = str(value or "").strip()
     return model if model and model.lower() != "auto" else None
-
-
-def _ollama_chat_url(base_url: str) -> str:
-    """The client stores a bare Ollama base URL (it uses that directly to list
-    /api/tags from the host). The agent runs inside Docker though, so a
-    "localhost"/"127.0.0.1" address the user typed on their host machine has
-    to be translated to the container-reachable host.docker.internal, and the
-    /api/chat path (which OllamaClient posts to verbatim) has to be appended."""
-    normalized = base_url.strip().rstrip("/")
-    for loopback_host in ("localhost", "127.0.0.1"):
-        normalized = normalized.replace(f"://{loopback_host}", "://host.docker.internal")
-    return normalized + "/api/chat"
 
 
 def _rollback_notice(error_text: str) -> str:

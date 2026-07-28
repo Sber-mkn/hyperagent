@@ -1,24 +1,20 @@
+# The router shells out to `docker compose` to bring each user's stack up, so it
+# needs the CLI and the compose plugin -- taken straight from their official
+# image. Installing them from Docker's apt repository instead meant fetching a
+# GPG key and a second package index at build time, which is the step that fails
+# first behind a proxy, on a restricted network, or whenever that repository has
+# no packages yet for the base image's Debian release.
+from docker:29-cli as docker_cli
+
 from python:3.14-slim
 
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    curl \
-    gnupg \
-    && install -m 0755 -d /etc/apt/keyrings \
-    && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
-    && chmod a+r /etc/apt/keyrings/docker.gpg \
-    && echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
-      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-      tee /etc/apt/sources.list.d/docker.list > /dev/null \
-    && apt-get update \
-    && apt-get install -y docker-ce-cli docker-compose-plugin \
-    && rm -rf /var/lib/apt/lists/*
-
+copy --from=docker_cli /usr/local/bin/docker /usr/local/bin/docker
+copy --from=docker_cli /usr/local/libexec/docker/cli-plugins/docker-compose \
+     /usr/local/libexec/docker/cli-plugins/docker-compose
 
 workdir /hyperagent
 copy router/requirements.txt requirements.txt
 run pip install --no-cache-dir --upgrade -r requirements.txt
-copy .. .
+copy . .
 env PYTHONPATH=/hyperagent
 cmd ["python", "router/main.py"]

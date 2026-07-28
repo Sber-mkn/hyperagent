@@ -23,8 +23,25 @@ CONSTITUTION_DIR = Path(
     )
 )
 
-OLLAMA_URL = os.getenv("OLLAMA_URL") or os.getenv(
-    "OLLAMA_CHAT_URL", "http://localhost:11434/api/chat"
+
+def ollama_chat_url(base_url: str) -> str:
+    """Turn a bare Ollama base URL into the /api/chat endpoint OllamaClient posts
+    to, resolved from where the agent actually runs. An address is always given
+    from the server's point of view, so a loopback host means "the machine
+    hosting the backend" — which from inside this container is host.docker.internal
+    (docker-compose maps it to the host gateway)."""
+    normalized = base_url.strip().rstrip("/")
+    for loopback_host in ("localhost", "127.0.0.1"):
+        normalized = normalized.replace(f"://{loopback_host}", "://host.docker.internal")
+    if normalized.endswith("/api/chat"):
+        return normalized
+    return normalized + "/api/chat"
+
+
+# Where the backend's own ("Hyper") model lives, as seen from the server host.
+HYPER_OLLAMA_URL = os.getenv("HYPER_OLLAMA_URL", "http://host.docker.internal:11434")
+OLLAMA_URL = (
+    os.getenv("OLLAMA_URL") or os.getenv("OLLAMA_CHAT_URL") or ollama_chat_url(HYPER_OLLAMA_URL)
 )
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
 OPENAI_BASE_URL = os.getenv("OPENROUTER_BASE_URL") or os.getenv(

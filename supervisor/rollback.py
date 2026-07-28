@@ -16,3 +16,13 @@ def start_agent():
         agent_container.start()
     elif agent_container.status == "running":
         agent_container.restart()
+
+
+def agent_container_running() -> bool:
+    """Whether the agent is up right now, asked of Docker rather than inferred
+    from what the supervisor last saw. The agent restarts itself after every
+    task, a rollback, or a crash, and those restarts are invisible here."""
+    try:
+        return docker_client.containers.get(AGENT_CONTAINER).status == "running"
+    except Exception:
+        return False

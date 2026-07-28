@@ -2,8 +2,8 @@ import logging
 import sys
 import traceback
 
-# from agent.tools import registry
 from agent.main import agent_logic
+from agent.tools import registry
 from agent_immutable.on_functions import (
     on_command,
     on_content,
@@ -26,10 +26,12 @@ if __name__ == "__main__":
 
     rabbitmq = RabbitMQAgent()
     set_rabbitmq(rabbitmq)
-    # registry.on_command = on_command
+    # Without this the version_* tools call registry.on_command while it is
+    # still None and every commit fails with "'NoneType' object is not callable".
+    registry.on_command = on_command
     rabbitmq.start_consuming()
 
-    command, task, error, llm_chat, l3_memory, agent_session = rabbitmq.get_command()
+    command, task, error, llm_chat, l3_memory, agent_session, replayed_task = rabbitmq.get_command()
 
     if command == "start":
         logger.info("Agent started")
@@ -50,6 +52,7 @@ if __name__ == "__main__":
                 llm_chat=llm_chat,
                 l3_memory=l3_memory,
                 agent_session=agent_session,
+                replayed_task=replayed_task,
             )
             rabbitmq.send_ack()
 

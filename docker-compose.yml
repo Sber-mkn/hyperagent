@@ -138,10 +138,17 @@ services:
       - RABBITMQ_USER=agent
       - RABBITMQ_PASSWORD=12345
       - CLIENT_LOGIN=${LOGIN}
+      # The backend's own model, addressed from the server host. Override in
+      # .env to point at a model living anywhere else.
+      - HYPER_OLLAMA_URL=${HYPER_OLLAMA_URL:-http://host.docker.internal:11434}
     volumes:
       - agent_work:/hyperagent/agent:rw
       - ./workdir:/hyperagent/workdir:rw
       - ./logs:/hyperagent/logs:rw
+    # Docker Desktop resolves host.docker.internal on its own; on Linux it only
+    # exists if mapped explicitly, and without it every server-host address fails.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: always
 
   supervisor:
@@ -168,10 +175,15 @@ services:
       - RABBITMQ_PASSWORD=12345
       - CLIENT_LOGIN=${LOGIN}
       - AGENT_CONTAINER_NAME=hyperagent_agent_${LOGIN}
+      # Same address as the agent uses: the supervisor answers the client's
+      # "which models are available" requests from the server side.
+      - HYPER_OLLAMA_URL=${HYPER_OLLAMA_URL:-http://host.docker.internal:11434}
     volumes:
       - agent_work:/hyperagent/agent
       - agent_git:/hyperagent/agent_git
       - /var/run/docker.sock:/var/run/docker.sock
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
     restart: always
 
