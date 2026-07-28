@@ -15,6 +15,7 @@ from agent.tools.registry import (
 )
 
 logger = logging.getLogger(__name__)
+importlib.import_module(f"{__name__}.builtin")
 
 # Auto-load every tool module in this package (one @tool per file) so new
 # tool modules become available without hand-editing this file. A broken
