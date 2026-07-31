@@ -12,7 +12,9 @@ REPO_ROOT = AGENT_DIR.parent
 
 load_dotenv(AGENT_DIR / ".env")
 
-DATA_DIR = Path(os.getenv("V3_DATA_DIR", REPO_ROOT / "logs" / "agent_data"))
+# Скиллы лежат внутри каталога агента: это и персональный том, и рабочее
+# дерево git, поэтому они свои у каждого пользователя и версионируются.
+DATA_DIR = Path(os.getenv("V3_DATA_DIR", AGENT_DIR / "data"))
 AGENT_WORKDIR = Path(os.getenv("AGENT_WORKDIR", REPO_ROOT / "workdir"))
 
 _docker_constitution = Path("/hyperagent/constitution")
@@ -38,7 +40,6 @@ def ollama_chat_url(base_url: str) -> str:
     return normalized + "/api/chat"
 
 
-# Where the backend's own ("Hyper") model lives, as seen from the server host.
 HYPER_OLLAMA_URL = os.getenv("HYPER_OLLAMA_URL", "http://host.docker.internal:11434")
 OLLAMA_URL = (
     os.getenv("OLLAMA_URL") or os.getenv("OLLAMA_CHAT_URL") or ollama_chat_url(HYPER_OLLAMA_URL)

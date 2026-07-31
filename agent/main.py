@@ -35,12 +35,6 @@ AGENT_TYPE_TO_PROVIDER = {
     "ollama": "ollama",
     "openai": "openai",
 }
-# The client's "api" session type is branded as OpenRouter (it collects an
-# OPENROUTER_API_KEY, not an OpenAI one) — default its base_url to OpenRouter's
-# real endpoint rather than falling through to OPENAI_BASE_URL's default of
-# api.openai.com, which rejects OpenRouter keys outright. The distinct
-# "openai" session type is real OpenAI and uses OPENAI_BASE_URL/OPENAI_API_KEY
-# as-is (its default is already api.openai.com).
 OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
 
@@ -84,10 +78,6 @@ def agent_logic(
                 "tools": tools_spec(),
                 "memory_store": store,
                 "external_history": llm_chat is not None,
-                # The supervisor replays the same task after a rollback (with a
-                # traceback) and after a version_commit restart (without one) —
-                # both already have this task in stored history, so neither may
-                # append it a second time.
                 "resume_task": bool(error_text) or replayed_task,
                 "agent_session": agent_session,
                 "memory_context": ContextManager(
@@ -119,8 +109,6 @@ def _build_client(
     provider = AGENT_TYPE_TO_PROVIDER.get(agent_type, LLM_PROVIDER)
 
     if provider == "ollama":
-        # "local" is the backend's own model (OLLAMA_URL, configured server-side);
-        # "ollama" is a model the user pointed the server at from the client.
         client_url = agent_config.get("OLLAMA_URL")
         url = ollama_chat_url(client_url) if client_url else OLLAMA_URL
         return OllamaClient(url=url), {

@@ -8,7 +8,7 @@ import sys
 from agent.tools import registry
 from agent.tools.registry import tool, truncate_middle
 
-MAX_LIMIT_CHARS = 20000  # потолок, выше которого limit не поднять ни одним инструментом — защита от совсем неадекватных запросов
+MAX_LIMIT_CHARS = 20000
 
 
 def _find_bash() -> str:
@@ -41,7 +41,7 @@ def _find_bash() -> str:
         if os.path.isfile(exe) and not any(m in exe.lower() for m in skip_markers):
             return exe
 
-    return "bash"  # ничего не нашли — пробуем как есть, пусть падает с понятной ошибкой
+    return "bash"
 
 
 def _html_to_text(html: str) -> str:
@@ -54,7 +54,7 @@ def _html_to_text(html: str) -> str:
         for tag in soup(["script", "style", "noscript", "template", "svg", "head"]):
             tag.decompose()
         text = soup.get_text("\n")
-    except ImportError:  # fallback без bs4
+    except ImportError:
         import html as _html
 
         html = re.sub(r"(?is)<(script|style|noscript|template|svg|head)\b.*?</\1>", " ", html)

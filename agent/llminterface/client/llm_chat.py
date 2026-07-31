@@ -41,8 +41,8 @@ class LLMMessage(BaseModel):
     thinking: str
     content: str
 
-    tool_calls: list[dict] | None = None  # запрошенные вызовы инструментов
-    tool_call_id: str | None = None  # для role="tool": id вызова, на который отвечаем
+    tool_calls: list[dict] | None = None
+    tool_call_id: str | None = None
 
     provider: str = ""
     model: str = ""
@@ -64,8 +64,6 @@ class LLMMessage(BaseModel):
 
     @classmethod
     def tool_result(cls, name: str, content: Any, tool_call_id: str | None = None) -> LLMMessage:
-        # результат выполнения инструмента как сообщение роли "tool".
-        # tool_call_id обязателен для openai, в ollama игнорируется.
         return cls(
             done=True,
             role="tool",

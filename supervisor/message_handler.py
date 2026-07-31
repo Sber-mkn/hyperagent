@@ -61,6 +61,8 @@ def error_handler(message: dict, git_service: GitService) -> dict:
     """
     error_text = message.get("error") or ""
 
+    # Откатываем, только если агент менял свой код: PENDING-снимок есть
+    # лишь после version_commit. Иначе это обычный сбой задачи.
     snapshot = get_snapshot_by_status("PENDING")
     if not snapshot:
         logger.info(
@@ -75,9 +77,6 @@ def error_handler(message: dict, git_service: GitService) -> dict:
 
     stable_snapshot = get_snapshot_by_status("STABLE")
     if not stable_snapshot:
-        # Nothing proven to return to — a fresh deployment whose first task
-        # failed. Raising here only turned one failed task into a dead
-        # supervisor; restarting the agent is all that is left to do.
         logger.warning("No stable snapshot to roll back to, restarting agent as is")
         start_agent()
         return {"rolled_back": False, "error_text": error_text}
@@ -93,8 +92,6 @@ def error_handler(message: dict, git_service: GitService) -> dict:
 def ack_handler(git_service: GitService):
     mark_pending_snapshot_stable()
 
-    # The task went through on this code, so anything still uncommitted is
-    # proven too and belongs in the stable history.
     git_service.check(is_stable=True)
 
 
@@ -144,8 +141,6 @@ def client_data_handler(message: dict) -> dict:
         return {"messages": get_chat_history(int(message["chat_id"]))}
 
     if action == "list_models":
-        # An unreachable model is an ordinary answer, not a failure of the
-        # request: the client shows it next to the model picker and carries on.
         try:
             return {
                 "models": list_models(

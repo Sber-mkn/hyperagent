@@ -89,10 +89,6 @@ def build_agent(client: LLMClient) -> AgentGraph:
                     state.get("on_end_message"),
                     LLMMessage.from_message({"role": "user", "content": task}),
                 )
-            # Prime every new task with the learned-skill catalog up front,
-            # instead of relying on the model to decide to call skills_list
-            # itself — it previously sometimes skipped this and reinvented
-            # (or blindly retried) a broken approach from scratch.
             catalog = skills_list()
             if catalog and catalog != "[]":
                 state["memory_store"].append(

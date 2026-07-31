@@ -26,8 +26,6 @@ if __name__ == "__main__":
 
     rabbitmq = RabbitMQAgent()
     set_rabbitmq(rabbitmq)
-    # Without this the version_* tools call registry.on_command while it is
-    # still None and every commit fails with "'NoneType' object is not callable".
     registry.on_command = on_command
     rabbitmq.start_consuming()
 

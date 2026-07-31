@@ -124,7 +124,10 @@ services:
       agent_rabbitmq:
         condition: service_healthy
     environment:
-      - V3_DATA_DIR=/hyperagent/logs/agent_data
+      # Inside the agent's own directory: that is the per-user volume and the
+      # git work tree at once, so learned skills are private to this account
+      # and versioned along with the agent's source.
+      - V3_DATA_DIR=/hyperagent/agent/data
       - AGENT_WORKDIR=/hyperagent/workdir
       - AGENT_ROOT=/hyperagent/agent
       - POSTGRES_HOST=agent_db
@@ -143,8 +146,11 @@ services:
       - HYPER_OLLAMA_URL=${HYPER_OLLAMA_URL:-http://host.docker.internal:11434}
     volumes:
       - agent_work:/hyperagent/agent:rw
-      - ./workdir:/hyperagent/workdir:rw
-      - ./logs:/hyperagent/logs:rw
+      # A named volume, not a host path: compose prefixes it with the project
+      # name, so every account gets its own. The bind mount this replaces
+      # pointed all users at one directory on the host, which leaked one
+      # account's deliverables (and, before the move, its skills) to the next.
+      - agent_workdir:/hyperagent/workdir:rw
     # Docker Desktop resolves host.docker.internal on its own; on Linux it only
     # exists if mapped explicitly, and without it every server-host address fails.
     extra_hosts:
@@ -193,4 +199,5 @@ volumes:
   agent_db_data:
   agent_rabbitmq_data:
   agent_work:
+  agent_workdir:
   agent_git:

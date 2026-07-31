@@ -59,7 +59,7 @@ class OpenaiClient(LLMClient):
                 prompt=usage.get("prompt_tokens"),
                 response=usage.get("completion_tokens"),
             ),
-            duration=None,  # недоступно в openai api
+            duration=None,
             dt=datetime.now(),
         )
 

@@ -23,8 +23,6 @@ def run_in_terminal(command: str) -> str:
         command: команда для запуска, например "python script.py".
     """
     if platform.system() == "Windows":
-        # Одной строкой, не списком: иначе Python экранирует кавычки внутри
-        # команды по правилам C, а cmd их так не читает.
         subprocess.Popen(
             f'cmd /c "{command} & echo. & pause"',
             creationflags=subprocess.CREATE_NEW_CONSOLE,

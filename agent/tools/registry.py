@@ -19,17 +19,11 @@ _ARG_HDR = re.compile(r"^(args|arguments|parameters|params)\s*:\s*$", re.I)
 _SECTION = re.compile(
     r"^(args|arguments|parameters|params|returns?|raises|yields|examples?|notes?)\s*:\s*$", re.I
 )
-_GOOGLE_PARAM = re.compile(
-    r"^(\w+)\s*(?:\([^)]*\))?\s*:\s*(.*)$"
-)  # name: desc  |  name (type): desc
-_SPHINX_PARAM = re.compile(r"^:param\s+(?:\w+\s+)?(\w+)\s*:\s*(.*)$")  # :param name: desc
+_GOOGLE_PARAM = re.compile(r"^(\w+)\s*(?:\([^)]*\))?\s*:\s*(.*)$")
+_SPHINX_PARAM = re.compile(r"^:param\s+(?:\w+\s+)?(\w+)\s*:\s*(.*)$")
 
 
 on_command: Callable[[dict[str, Any]], Any] | None = None
-# UI-specific hook for ask_user: whichever client is actually running (GUI or
-# console) wires this to something that can reach the real human, since a
-# plain input() has no interactive stdin to read in a GUI process. Left
-# unset, ask_user falls back to input() (e.g. a bare "python -m agent.main").
 on_ask_user: Callable[[str], str] | None = None
 
 
@@ -38,8 +32,8 @@ class Tool:
     name: str
     description: str
     func: Callable[..., Any]
-    parameters: dict[str, Any]  # JSON-schema объекта параметров
-    default_target: str = "server"  # куда всегда роутится вызов этого инструмента (фиксировано)
+    parameters: dict[str, Any]
+    default_target: str = "server"
 
     def __call__(self, **kwargs: Any) -> Any:
         return self.func(**kwargs)
@@ -62,13 +56,13 @@ def _parse_docstring(doc: str | None) -> tuple[str, dict[str, str]]:
     while i < n:
         line = lines[i].strip()
 
-        m = _SPHINX_PARAM.match(line)  # reST: :param name: ...
+        m = _SPHINX_PARAM.match(line)
         if m:
             params[m.group(1)] = m.group(2).strip()
             i += 1
             continue
 
-        if _ARG_HDR.match(line):  # Google: Args:
+        if _ARG_HDR.match(line):
             i += 1
             base_indent: int | None = None
             last: str | None = None
@@ -78,7 +72,7 @@ def _parse_docstring(doc: str | None) -> tuple[str, dict[str, str]]:
                 if not s:
                     i += 1
                     continue
-                if _SECTION.match(s):  # началась следующая секция
+                if _SECTION.match(s):
                     break
                 indent = len(raw) - len(raw.lstrip())
                 if base_indent is None:
@@ -88,14 +82,14 @@ def _parse_docstring(doc: str | None) -> tuple[str, dict[str, str]]:
                     params[pm.group(1)] = pm.group(2).strip()
                     last = pm.group(1)
                     i += 1
-                elif last is not None:  # продолжение описания параметра
+                elif last is not None:
                     params[last] = (params[last] + " " + s).strip()
                     i += 1
                 else:
                     break
             continue
 
-        if line.startswith(":") or _SECTION.match(line):  # прочие поля/секции — не в summary
+        if line.startswith(":") or _SECTION.match(line):
             i += 1
             continue
 
@@ -121,8 +115,6 @@ def _build_schema(
         props[pname] = prop
         if p.default is inspect.Parameter.empty:
             required.append(pname)
-    # Where a tool runs is fixed per-tool (see Tool.default_target), not a
-    # model choice -- no "target" property is exposed here.
     return {"type": "object", "properties": props, "required": required}
 
 

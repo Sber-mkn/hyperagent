@@ -6,8 +6,6 @@ from database.agent.crud import add_client_message, add_l3_memory, add_message
 
 SUPERVISOR_ROUTING_KEY = "supervisor"
 CLIENT_ROUTING_KEY = "client"
-# A client tool may run a shell command for its own full timeout, and ask_user
-# waits for a human to type an answer — both outlive the default 60 s RPC window.
 CLIENT_COMMAND_TIMEOUT = 600
 
 

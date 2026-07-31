@@ -17,8 +17,8 @@ if TYPE_CHECKING:
     from agent.memory.store import Turn
 
 
-MIN_REASONING_CHARS = 600  # no-tool path: total assistant content+thinking chars
-MIN_ASSISTANT_TURNS = 2  # no-tool path: number of assistant turns
+MIN_REASONING_CHARS = 600
+MIN_ASSISTANT_TURNS = 2
 MAX_TRAJECTORY_THINKING_CHARS = 800
 _SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 logger = logging.getLogger(__name__)
@@ -204,7 +204,7 @@ class SkillManager:
 def _worth_evaluating(turns: list[Turn]) -> bool:
     """Cheap pre-filter: skip only exchanges too trivial to bother asking the LLM about."""
     if _tool_names(turns):
-        return True  # any tool call at all — including a single failed one — is a candidate
+        return True
 
     assistant_turns = [turn for turn in turns if turn.role == "assistant"]
     reasoning_chars = sum(len(turn.content) + len(turn.thinking or "") for turn in assistant_turns)

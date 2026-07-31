@@ -5,8 +5,6 @@ from sqlalchemy import asc, desc, exists, select
 from database.agent.llmchat import Chat, ClientChat, L3Memory, LLMMessage
 from database.agent.session import AgentSession
 
-# NEW_CHAT_TITLE = "New "
-
 
 def _l3_memory_to_dict(memory: L3Memory) -> dict:
     return {

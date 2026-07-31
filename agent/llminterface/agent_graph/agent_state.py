@@ -1,7 +1,7 @@
 from collections.abc import Callable, Iterator
 from typing import Any
 
-Reducer = Callable[[Any, Any], Any]  # (старое, новое) -> итог
+Reducer = Callable[[Any, Any], Any]
 
 
 class AgentState:

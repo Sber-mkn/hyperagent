@@ -10,11 +10,6 @@ from agent.llminterface.client.llm_chat import LLMChat, LLMMessage
 from agent.memory.store import MemoryStore, Turn
 from agent.tools.registry import truncate_middle
 
-# Within one still-open task, tool arguments (e.g. a full rewritten script) are
-# never truncated the way tool results are — a task with many rewrites of the
-# same tool (see: 10+ run_python rewrites while debugging an Excel chart) grows
-# the prompt without bound for the rest of that task. Keep the most recent calls
-# to a given tool at full fidelity; compact older ones.
 KEEP_FULL_TOOL_CALLS = 2
 MAX_ARGUMENTS_CHARS = 600
 

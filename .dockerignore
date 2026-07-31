@@ -1,0 +1,23 @@
+# Runtime state must never be baked into an image: whatever lands here becomes
+# the starting point of every new account's volume. Skills learned while
+# developing would silently appear as another user's "already known" skills.
+agent/data/
+logs/
+workdir/
+
+# Secrets. agent/.env in particular is read by agent/config.py, where an
+# OLLAMA_URL left over from a local run would override the deployment's own
+# model address inside the container.
+.env
+agent/.env
+database/.env
+
+**/__pycache__
+**/*.py[cod]
+.git
+.github
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.idea
+.vscode

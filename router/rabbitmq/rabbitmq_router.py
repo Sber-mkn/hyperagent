@@ -29,10 +29,6 @@ class RabbitMQRouter:
         self.queue = queue
         self.docker_manager = DockerManager()
         self.logout_timers = {}
-        # One lock per login so that bringing a stack up and tearing it down can
-        # never overlap: a logout timer firing just as the same user logs back in
-        # used to run `compose down` and `compose up` against the same project at
-        # the same time, leaving containers half-created.
         self._client_locks: dict[str, threading.Lock] = {}
         self._locks_guard = threading.Lock()
 
@@ -129,10 +125,6 @@ class RabbitMQRouter:
             "rabbitmq_password": "12345",
             "login": login,
         }
-        # The client already knows how to reach this deployment — it just logged
-        # in over that address — so the server does not need to know its own
-        # external name. Only send a host when the personal queue really lives
-        # somewhere else than the router.
         external_host = os.getenv("SERVER_EXTERNAL_IP", "").strip()
         if external_host:
             credentials["rabbitmq_host"] = external_host
@@ -180,8 +172,6 @@ class RabbitMQRouter:
             timer.cancel()
 
     def _stop_client(self, login: str):
-        # Shares the login lock: a stack must never be torn down while the same
-        # user is being brought back up.
         with self._client_lock(login):
             self.docker_manager.stop_client(login)
 

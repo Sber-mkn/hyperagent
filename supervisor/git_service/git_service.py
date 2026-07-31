@@ -76,10 +76,8 @@ class GitService:
         else:
             logger.info("Repository has commits")
 
-            # Whatever the container starts with is the deployment's baseline,
-            # not an unproven change by the agent. Recording it as PENDING used
-            # to leave "Initial commit" as the only STABLE snapshot forever, so
-            # every rollback threw the agent back to the day it was created.
+            # Код, с которым стартовал контейнер, — базовая версия, а не
+            # непроверенная правка агента.
             self.check(is_stable=True)
 
     def check(self, is_stable: bool = False):
@@ -115,7 +113,7 @@ class GitService:
 
         return result
 
-    def run_git_commands(self, commands: list[list[str]], check: bool = True) -> list[str]:
+    def run_git_commands(self, commands: list[list[str]], check: bool = True) -> list[GitResult]:
         result = []
         for command in commands:
             result.append(self.run_git_command(command, check))
@@ -157,15 +155,14 @@ class GitService:
     def create_branch(self) -> None:
         self.run_git_command(["switch", "-c", self.branch])
 
-    def rollback(self, target_sha: str) -> list[str]:
-        result = self.run_git_commands(
+    def rollback(self, target_sha: str) -> str:
+        results = self.run_git_commands(
             [
                 ["restore", "--source", target_sha, "--staged", "--worktree", "."],
                 ["clean", "-fd"],
             ]
         )
-
-        return result
+        return "\n".join(f"{result.stdout}{result.stderr}" for result in results).strip()
 
     def status(self) -> str:
         return self.run_git_command(["status", "--porcelain"]).stdout
